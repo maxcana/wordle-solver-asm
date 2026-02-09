@@ -33,10 +33,11 @@ _start:
   ; for PS
   xor r12d,r12d
   for_PG:
-  mov rax, [words + r12d * 5] ; pg (first 5 bytes, ignore last 3)
+  mov rdi, [words + r12d * 5] ; pg (first 5 bytes, ignore last 3)
   
   for_PS:
-  mov rbx, [words + r13d * 5] ; ps
+  mov rsi, [words + r13d * 5] ; ps
+  call get_colors
   
   inc r13d
   cmp r13d, 14855
@@ -52,8 +53,8 @@ _start:
 
 ; rdi - guess in the form 00 00 00 00 00 07 04 03
 ; rsi - secret in the form 00 00 00 00 00 07 04 03
-; Return: rcx - colors in the form 00 00 00 01 02 00 02 01
-; modifies: rcx, rax, rbx, r9
+; Return: r8 - colors in the form 00 00 00 01 02 00 02 01
+; modifies: rax, rbx, rcx, rdx, r8, r9, r10, r11
 get_colors:
   ; how_many_yellows: 26-length array of bytes
   sub rsp, 32
@@ -63,43 +64,64 @@ get_colors:
   mov [rsp+16], rax
   mov [rsp+24], rax
   
-  xor ecx,ecx ; initialize colors array
-  ; we may want to store the colors array, secret, and guess in the heap, it might be faster instead of bit shifting
+  xor r8d,r8d; initialize colors array
   
   xor r9,r9
   mov rax, rsi ; copy secret into rax
   mov rbx, rdi ; copy guess into rbx
-  gc_loop:
+  gc_loop_1:
   
-  inc [rsp+al] ; take the last character of the secret (al)
+  movzx r11d, al ; allow addressing of memory
+  inc [rsp+r11] ; take the last character of the secret (al)
   cmp al, bl
   jne gc_1 ; if secret[i] == guess[i] 
-  add ecx, 0x02000000 ; green on MSB
-  dec [rsp+al]
+  add r8, 0x0000000200000000 ; green on left letter (gets shifted to right at the end)
+  dec [rsp+r11]
   gc_1: ; endif  
   
-  shr ecx, 8 ; shift the colors each time so its correct at the end
+  shr r8, 8 ; shift the colors each time so its correct at the end
   shr rax, 8 ; drop the last character of the secret
   shr rbx, 8 ; drop the last character of the guess
   
   inc r9
   cmp r9, 5
-  jne gc_loop
+  jne gc_loop_1
+  
+  ; r8 (colors) is now of the form 00 00 00 02 01 00 01 01
+  ; if we set rdx = shl 24, it becomes 02 01 00 01 01
+  ; then we can cmp to 01 00 00 ... and shl 8 each time to check the letter is gray
   
   ; add yellows from left to right
   xor r9,r9
   mov rbx, rdi ; copy guess into rbx
-  gc_loop_1:
+  mov rdx, r8
+  shl rdx, 24 ; rdx is the color checker
+  gc_loop_2:
   
-  cmp [rsp+bl], 0
+  cmp rdx, 0x0100000000000000 ; if guess[i] is yellow or green, skip
+  jae gc_2
+  movzx r11d, bl ; allow addressing of memory
+  cmp byte ptr [rsp+r11], 0 ; if how_many_yellows == 0, skip
+  jne gc_2
+  dec byte ptr [rsp+r11]
+  ; since its gray we can OR it with a 00000001 to change it to yellow
+  mov r11, 0x0000000100000000
+  mov rcx, r9
+  shl rcx, 3 ; multiply by 8
+  shr r11, cl ; shift right by 8*r9
+  or r8, r11
+  
+  gc_2:
   shr rbx, 8 ; drop the last character of the guess
+  shl rdx, 8 ; move the color checker to the left
   
   inc r9
   cmp r9, 5
-  jne gc_loop
+  jne gc_loop_2
 
   
   add rsp, 32
+  ret
 
 ; rdi - File descriptor (1 for stdout)
 ; rsi - Pointer to the string to print
