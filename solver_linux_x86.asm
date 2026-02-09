@@ -172,21 +172,70 @@ get_colors:
   ret
 
 ; rcx: index of bit (0-285)
-; modifies: rcx, xmm0, xmm1, xmm2, xmm3
-; output: xmm0, xmm1, xmm2 will be updated
+; modifies: rcx, rbx, xmm0, xmm1, xmm2, xmm3
+; output: one of xmm0, xmm1, xmm2 will be updated (via xor with a mask)
 write_raw_bit:
+  mov rbx, 1
+  shl rbx, 63 ; set up rbx for shifting single bit
+  xor xmm3,xmm3 ; set up xmm3, complementary bitmap for operating
+  
   cmp rcx, 127
   jbe .x0
   cmp rcx, 255
   jbe .x1
-  ja .x2
+  ja .x2_left
   .x0:
-  movdqu xmm3, 1
-  shl xmm3
+  cmp rcx, 63
+  ja .x0_right
+  .x0_left:
+  shr rbx, cl ; position rbx
+  ; pinsrq xmm_dest, r64_or_mem, imm8: 
+  ; Take a 64-bit value from a general-purpose register (or memory), put it into either the low 
+  ; or high 64 bits of an XMM register, and leave the other 64 bits alone.
+  pinsrq xmm3, rbx, 1
+  pxor xmm0, xmm3
+  ret
+  .x0_right:
+  sub rcx, 64
+  shr rbx, cl
+  pinsrq xmm3, rbx, 0
+  pxor xmm0, xmm3
+  ret
+
   .x1:
+  cmp rcx, 191
+  ja .x1_right
+  .x1_left:
   sub rcx, 128
-  .x2:
+  shr rbx, cl
+  pinsrq xmm3, rbx, 1
+  pxor xmm1, xmm3
+  ret
+  .x1_right:
+  sub rcx, 192
+  shr rbx, cl
+  pinsrq xmm3, rbx, 0
+  pxor xmm1, xmm3
+  ret
+  
+  .x2_left:
   sub rcx, 256
+  shr rbx, cl
+  pinsrq xmm3, rbx, 1
+  pxor xmm2, xmm3
+  ret
+  
+  .finish:
+
+; rbx: index of leftmost bit (0-285)
+; rcx: index of rightmost bit (0-285)
+; modifies: rbx, rcx, r13, r14 xmm0, xmm1, xmm2, xmm3
+; output: xmm0, xmm1, xmm2 will be updated (via xor with a mask)
+write_raw_bit_sequence:
+mov r13, rbx
+shr r13, 7 ; divide by 128
+mov r14, rcx
+shr r14, 7 ; divide by 128
 
 
 ; rdi - File descriptor (1 for stdout)
