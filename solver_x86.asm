@@ -32,7 +32,7 @@ _start:
   cache_loop:
     lea rax, [r13 + r13*4] ; rax = r13 * 5
     mov rsi, [words + rax] ; ps
-      
+
     pxor xmm0,xmm0
     pxor xmm1,xmm1
     pxor xmm2,xmm2
@@ -42,16 +42,45 @@ _start:
     movdqu [rsp], xmm0
     movdqu [rsp+16], xmm0
     
-    mov r8, 5
-    for_ltr_in_ps:
-      mov rax, 
-      inc byte ptr [rsp+sil]
-      shr rsi, 8 ; WIP CODE AROUND HERE
-      
+    mov r8, 5  ; iterate from letter 4 to 0
+    encode_pos_loop:
+      dec r8
+      ; sil = letter
+      movzx rax, sil
+      inc byte ptr [rsp+rax] ; add to ltr_count
+
+      imul rbx, r8, 26 ; rbx = r8 * 26;
+      add rbx, sil 
+      call write_raw_bit
+
+      shr rdx, 8 ; drop last letter
       cmp r8, 0
       jne for_ltr_in_ps
     
-    
+    xor r8d,r8d
+    encode_count_loop:
+      ; letter = r8
+      ; count = [rsp+r8]
+      movzx rax, byte ptr [rsp+r8] ; rax = count
+
+      imul rbx, rax, 26 ; rbx = rax * 26;
+      add rbx, 130
+      add rbx, r8 
+      call write_raw_bit
+
+      inc r8
+      cmp r8, 26
+      jne encode_count_loop
+
+    ; "lea rax, [rbx + rcx*4 + 16]" MEANS rax = rbx + rcx*4 + 16
+    lea rax, [r12*3]
+    shl rax, 3
+    ; rax is now r12*48
+
+    ; write bitmaps to memory
+    movdqu [cached_bitmaps+rax+0], xmm0
+    movdqu [cached_bitmaps+rax+16], xmm1
+    movdqu [cached_bitmaps+rax+32], xmm2
     
     inc r12
     cmp r12, 14855
@@ -282,10 +311,12 @@ get_colors:
   ret
 
 ; write a bit into the xmm0-xmm2 bitmap
-; rcx: index of bit (0-285)
-; modifies: rcx, rbx, xmm0, xmm1, xmm2, xmm3
+; rbx: index of bit (0-285)
+; modifies: rbx, rcx, xmm0, xmm1, xmm2, xmm3
 ; output: one of xmm0, xmm1, xmm2 will be updated (via xor with a mask)
 write_raw_bit:
+  mov rcx, rbx ; somehow i inputted rbx to this function everytime, so im making that the official input
+
   mov rbx, 1
   shl rbx, 63 ; set up rbx for shifting single bit
   xor xmm3,xmm3 ; set up xmm3, complementary bitmap for operating
@@ -474,7 +505,8 @@ section .data
 section .bss
   ; each word is 8 bytes (left 3 are 0, right 5 are u8 letters)
   ; 14855 words * 8 = 118840 bytes
-  words_encoded resb 46422;
-  ; each bitmap needs to store 26*11 bits. there are 14855 bitmaps. 
-  ; total = 4248530 bits = 531066.25 bytes
-  cached_bitmaps resb 531067;
+  words_encoded resb 118840;
+  ; each bitmap needs to store 26*11 bits via 3 XMM registers. (128*3 = 384 bits)
+  ; there are 14855 bitmaps. 
+  ; total = 5704320 bits = 713040 bytes
+  cached_bitmaps resb 713040;
