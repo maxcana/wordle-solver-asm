@@ -17,83 +17,106 @@ _start:
   ; ex: 00 00 00 00 00 07 04 03, 00 00 00 00 00 0B 08 08, ...
   xor r12d,r12d
   for_word:
-  mov rax, [words + r12d * 5] ; 8 bytes. contains 1 word and the first 3 letters from the next word
-  ; ex. aahed aal = 61 61 68 65 64  61 61 6c
-  ; subtract 61 to make it 00 00 07 04 03  00 00 0B
-  ; shift right 3 bytes to make it 00 00 00 00 00 07 04 03
-  sub rax, 0x6161616161616161
-  shr rax, 24
-  mov [words_encoded+r12d*8], rax
-  inc r12d
-  cmp r12d, 14855
-  jne for_word
+    mov rax, [words + r12d * 5] ; 8 bytes. contains 1 word and the first 3 letters from the next word
+    ; ex. aahed aal = 61 61 68 65 64  61 61 6c
+    ; subtract 61 to make it 00 00 07 04 03  00 00 0B
+    ; shift right 3 bytes to make it 00 00 00 00 00 07 04 03
+    sub rax, 0x6161616161616161
+    shr rax, 24
+    mov [words_encoded+r12d*8], rax
+    inc r12d
+    cmp r12d, 14855
+    jne for_word
   
   ; begin main solver
   ; for PG
   ; for PS
   xor r12d,r12d
   for_PG:
-  lea rax, [r12 + r12*4]; rax = r12 * 5
-  mov rdi, [words + rax] ; pg (last 5 bytes, ignore first 3)
+    lea rax, [r12 + r12*4]; rax = r12 * 5
+    mov rdi, [words + rax] ; pg (last 5 bytes, ignore first 3)
   
-  for_PS:
-  lea rax, [r13 + r13*4]; rax = r13 * 5
-  mov rsi, [words + rax] ; ps
-  call get_colors ; r8 - colors in the form 00 00 00 01 02 00 02 01
+    for_PS:
+      lea rax, [r13 + r13*4]; rax = r13 * 5
+      mov rsi, [words + rax] ; ps
+      call get_colors ; r8 - colors in the form 00 00 00 01 02 00 02 01
   
-  ; encode 'positions' section of bitmask
-  xor r9,r9
-  mov rax, rdi ; copy pg into rax
-  for_ltr_in_guess: ; iterate right to left
-  ; r8w = color. colors[4-r9]
-  ; al = letter. letter[4-r9]
+      ; encode 'positions' section of bitmask
+      mov r9, 5
+      mov rax, rdi ; copy pg into rax
+      for_ltr_in_guess: ; iterate right to left (r9 from 4 -> 0)
+        dec r9
+        ; r8w = color. colors[4-r9]
+        ; al = letter. letter[4-r9]
   
-  xor edx,edx ; initialize ltrs_with_maximum (26 bits) (right-to-left)
-  sub rsp, 32
-  xor ebx,ebx
-  mov [rsp], ebx
-  mov [rsp+8], ebx
-  mov [rsp+16], ebx
-  mov [rsp+24], ebx ; initialize minimum_of_ltr array (26 bytes)
+        xor edx,edx ; initialize ltrs_with_maximum (26 bits) (right-to-left)
+        sub rsp, 32
+        xor ebx,ebx
+        mov [rsp], ebx
+        mov [rsp+8], ebx
+        mov [rsp+16], ebx
+        mov [rsp+24], ebx ; initialize minimum_of_ltr array (26 bytes)
 
-  pxor xmm0, xmm0
-  pxor xmm1, xmm1
-  pxor xmm2, xmm2 ; initialize bitmask
+        pxor xmm0, xmm0
+        pxor xmm1, xmm1
+        pxor xmm2, xmm2 ; initialize bitmask
   
-  movzx rbx, r8w; rbx = color (zero-extended)
-  jmp qword ptr [jmp_table + rbx*8]
+        movzx rbx, r8w; rbx = color (zero-extended)
+        jmp qword ptr [jmp_table + rbx*8]
   
-  .gray:
-  mov rbx,0x01
-  mov rcx,al
-  shl rbx,cl
-  or edx,ebx ; write ltrs_with_maximum at al (letter)
-  jmp .end
-  .yellow:
-  movzx rbx, al
-  inc byte ptr [rsp+rbx] ; increase minimum_of_ltr
-  jmp .end
-  .green:
-  movzx rbx, al
-  inc byte ptr [rsp+rbx]
+        .gray:
+          mov rbx,0x01
+          mov rcx,al
+          shl rbx,cl
+          or edx,ebx ; write ltrs_with_maximum at al (letter)
   
-  .end:
+          ; set up raw index from row (r9) and letter (al)
+          imul rbx, r9, 26 ; rbx = r9d * 26;
+          add rbx, al
   
-  shr r8, 8 ; drop last color
-  shr rax, 8 ; drop last letter
+          call write_raw_bit ; input: rbx - index. modifies rcx and rbx
+          jmp .end
+        .yellow:
+          movzx rbx, al
+          inc byte ptr [rsp+rbx] ; increase minimum_of_ltr
+
+          imul rbx, r9, 26
+          add rbx, al
   
-  inc r9
-  cmp r9, 5
-  jne for_ltr_in_guess
+          call write_raw_bit
   
-  add rsp, 32
-  inc r13d
-  cmp r13d, 14855
-  jne for_PS
+          jmp .end
+        .green:
+          movzx rbx, al
+          inc byte ptr [rsp+rbx]
   
-  inc r12d
-  cmp r12d, 14855
-  jne for_PG
+          imul rbx, r9, 26 ; left
+          imul rcx, r9, 26 ; right
+          add rcx, 25
+  
+          call write_raw_bit_sequence ; rbx - left, rcx - right.
+  
+          imul rbx, r9, 26
+          add rbx, al
+  
+          call write_raw_bit
+  
+        .end:
+  
+        shr r8, 8 ; drop last color
+        shr rax, 8 ; drop last letter
+  
+        cmp r9, 0
+        jne for_ltr_in_guess
+  
+      add rsp, 32
+      inc r13d
+      cmp r13d, 14855
+      jne for_PS
+  
+    inc r12d
+    cmp r12d, 14855
+    jne for_PG
   
   ; Set up arguments for exit function
   xor rdi, rdi
@@ -227,6 +250,7 @@ write_raw_bit:
   ret
   
   .finish:
+  
 
 ; write a sequence of bits into the xmm0-xmm2 bitmap
 ; rbx: index of leftmost bit (0-285)
@@ -234,95 +258,98 @@ write_raw_bit:
 ; modifies: rbx, rcx, r13, r14, r15, xmm0, xmm1, xmm2, xmm3
 ; output: xmm0, xmm1, xmm2 will be updated (via xor with a mask)
 write_raw_bit_sequence:
-mov r13, rbx
-shr r13, 6 ; divide by 64
-mov r14, rcx
-shr r14, 6 ; divide by 64
-cmp r13, r14
-; r13 = left seg, r14 = right seg
-je .do_it
+  mov r13, rbx
+  shr r13, 6 ; divide by 64
+  mov r14, rcx
+  shr r14, 6 ; divide by 64
+  cmp r13, r14
+  ; r13 = left seg, r14 = right seg
+  je .do_it
 
-; recursion time
-mov r14, rbx
-.loop: ; r14 = current segment
-cmp r14, rbx
-je .leftmost
-cmp r14, rcx
-je .rightmost
-.mid:
-mov rbx, r14
-shl rbx, 7
+  ; recursion time
+  mov r14, rbx
+  .loop: ; r14 = current segment
+    cmp r14, rbx
+    je .leftmost
+    cmp r14, rcx
+    je .rightmost
 
-mov rcx, r14
-shl rcx, 7
-add rcx, 127
-jmp .loop_end
-.leftmost:
-; leave rbx alone
-mov rcx, r14
-shl rcx, 7
-add rcx, 127
-jmp .loop_end
-.rightmost:
-mov rbx, r14
-shl rbx, 7
-; leave rcx alone
-call write_raw_bit_sequence
+    .mid:
+      mov rbx, r14
+      shl rbx, 7
 
-.loop_end:
-inc r15
-cmp r15, rcx
-jbe .loop
-ret
+      mov rcx, r14
+      shl rcx, 7
+      add rcx, 127
+      jmp .loop_end
 
-.do_it:
-shl r13, 6 ; get base index
-sub rbx, r13
-sub rcx, r13 ; localize rbx and rcx indexes to the segment
-shr r13, 6 ; revert change to r13
+  .leftmost:
+    ; leave rbx alone
+    mov rcx, r14
+    shl rcx, 7
+    add rcx, 127
+    jmp .loop_end
 
-; rcx is now a temp var used for shifting math (original MOVED to r15)
-mov r15, rcx
-mov r14, 1 ; init r14: bitmap to write into xmm3
-pxor xmm3, xmm3 ; init xmm3: actual bitmap for XORing
-sub rcx, rbx
-add rcx, 1
-shl r14, cl
-sub r14, 1 ; (1u64 << (right-left+1)) - 1)
-mov rcx, 127
-sub rcx, r15
-shl r14, cl
-; r13 is the segment we want to write to (0-4)
-cmp r13, 3
-ja .x2_left
-je .x1_right
-cmp r13, 1
-ja .x1_left
-je .x0_right
-jb .x_left
+  .rightmost:
+    mov rbx, r14
+    shl rbx, 7
+    ; leave rcx alone
+    call write_raw_bit_sequence
 
-.x0_left:
-pinsrq xmm3, r14, 1
-pxor xmm0, xmm3
-jmp .end_it
-.x0_right:
-pinsrq xmm3, r14, 0
-pxor xmm0, xmm3
-jmp .end_it
-.x1_left:
-pinsrq xmm3, r14, 1
-pxor xmm1, xmm3
-jmp .end_it
-.x1_right:
-pinsrq xmm3, r14, 0
-pxor xmm1, xmm3
-jmp .end_it
-.x2_left:
-pinsrq xmm3, r14, 1
-pxor xmm2, xmm3
-.end_it:
-ret
+  .loop_end:
+    inc r15
+    cmp r15, rcx
+    jbe .loop
 
+  ret
+
+  .do_it:
+    shl r13, 6 ; get base index
+    sub rbx, r13
+    sub rcx, r13 ; localize rbx and rcx indexes to the segment
+    shr r13, 6 ; revert change to r13
+
+    ; rcx is now a temp var used for shifting math (original MOVED to r15)
+    mov r15, rcx
+    mov r14, 1 ; init r14: bitmap to write into xmm3
+    pxor xmm3, xmm3 ; init xmm3: actual bitmap for XORing
+    sub rcx, rbx
+    add rcx, 1
+    shl r14, cl
+    sub r14, 1 ; (1u64 << (right-left+1)) - 1)
+    mov rcx, 127
+    sub rcx, r15
+    shl r14, cl
+    ; r13 is the segment we want to write to (0-4)
+    cmp r13, 3
+    ja .x2_left
+    je .x1_right
+    cmp r13, 1
+    ja .x1_left
+    je .x0_right
+    jb .x_left
+
+    .x0_left:
+      pinsrq xmm3, r14, 1
+      pxor xmm0, xmm3
+      jmp .end_it
+    .x0_right:
+      pinsrq xmm3, r14, 0
+      pxor xmm0, xmm3
+      jmp .end_it
+    .x1_left:
+      pinsrq xmm3, r14, 1
+      pxor xmm1, xmm3
+      jmp .end_it
+    .x1_right:
+      pinsrq xmm3, r14, 0
+      pxor xmm1, xmm3
+      jmp .end_it
+    .x2_left:
+      pinsrq xmm3, r14, 1
+      pxor xmm2, xmm3
+    .end_it:
+      ret
 
 ; rdi - File descriptor (1 for stdout)
 ; rsi - Pointer to the string to print
