@@ -43,7 +43,7 @@ _start:
   
   ; encode 'positions' section of bitmask
   xor r9,r9
-  mov rax, rsi ; copy ps into rax
+  mov rax, rdi ; copy pg into rax
   for_ltr_in_guess: ; iterate right to left
   ; r8w = color. colors[4-r9]
   ; al = letter. letter[4-r9]
@@ -171,6 +171,7 @@ get_colors:
   add rsp, 32
   ret
 
+; write a bit into the xmm0-xmm2 bitmap
 ; rcx: index of bit (0-285)
 ; modifies: rcx, rbx, xmm0, xmm1, xmm2, xmm3
 ; output: one of xmm0, xmm1, xmm2 will be updated (via xor with a mask)
@@ -227,15 +228,100 @@ write_raw_bit:
   
   .finish:
 
+; write a sequence of bits into the xmm0-xmm2 bitmap
 ; rbx: index of leftmost bit (0-285)
 ; rcx: index of rightmost bit (0-285)
-; modifies: rbx, rcx, r13, r14 xmm0, xmm1, xmm2, xmm3
+; modifies: rbx, rcx, r13, r14, r15, xmm0, xmm1, xmm2, xmm3
 ; output: xmm0, xmm1, xmm2 will be updated (via xor with a mask)
 write_raw_bit_sequence:
 mov r13, rbx
-shr r13, 7 ; divide by 128
+shr r13, 6 ; divide by 64
 mov r14, rcx
-shr r14, 7 ; divide by 128
+shr r14, 6 ; divide by 64
+cmp r13, r14
+; r13 = left seg, r14 = right seg
+je .do_it
+
+; recursion time
+mov r14, rbx
+.loop: ; r14 = current segment
+cmp r14, rbx
+je .leftmost
+cmp r14, rcx
+je .rightmost
+.mid:
+mov rbx, r14
+shl rbx, 7
+
+mov rcx, r14
+shl rcx, 7
+add rcx, 127
+jmp .loop_end
+.leftmost:
+; leave rbx alone
+mov rcx, r14
+shl rcx, 7
+add rcx, 127
+jmp .loop_end
+.rightmost:
+mov rbx, r14
+shl rbx, 7
+; leave rcx alone
+call write_raw_bit_sequence
+
+.loop_end:
+inc r15
+cmp r15, rcx
+jbe .loop
+ret
+
+.do_it:
+shl r13, 6 ; get base index
+sub rbx, r13
+sub rcx, r13 ; localize rbx and rcx indexes to the segment
+shr r13, 6 ; revert change to r13
+
+; rcx is now a temp var used for shifting math (original MOVED to r15)
+mov r15, rcx
+mov r14, 1 ; init r14: bitmap to write into xmm3
+pxor xmm3, xmm3 ; init xmm3: actual bitmap for XORing
+sub rcx, rbx
+add rcx, 1
+shl r14, cl
+sub r14, 1 ; (1u64 << (right-left+1)) - 1)
+mov rcx, 127
+sub rcx, r15
+shl r14, cl
+; r13 is the segment we want to write to (0-4)
+cmp r13, 3
+ja .x2_left
+je .x1_right
+cmp r13, 1
+ja .x1_left
+je .x0_right
+jb .x_left
+
+.x0_left:
+pinsrq xmm3, r14, 1
+pxor xmm0, xmm3
+jmp .end_it
+.x0_right:
+pinsrq xmm3, r14, 0
+pxor xmm0, xmm3
+jmp .end_it
+.x1_left:
+pinsrq xmm3, r14, 1
+pxor xmm1, xmm3
+jmp .end_it
+.x1_right:
+pinsrq xmm3, r14, 0
+pxor xmm1, xmm3
+jmp .end_it
+.x2_left:
+pinsrq xmm3, r14, 1
+pxor xmm2, xmm3
+.end_it:
+ret
 
 
 ; rdi - File descriptor (1 for stdout)
