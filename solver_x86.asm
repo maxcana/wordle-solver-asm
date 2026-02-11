@@ -16,7 +16,7 @@ _start:
   ; ex: 00 00 00 00 00 07 04 03, 00 00 00 00 00 0B 08 08, ...
   xor r12d,r12d
   for_word:
-    mov rax, [words + r12d * 5] ; 8 bytes. contains 1 word and the first 3 letters from the next word
+    mov rax, [words + r12d * 5] ; 8 bytes. contains 1 word and the first 3 letters from the next word !
     ; ex. aahed aal = 61 61 68 65 64  61 61 6c
     ; subtract 61 to make it 00 00 07 04 03  00 00 0B
     ; shift right 3 bytes to make it 00 00 00 00 00 07 04 03
@@ -42,20 +42,20 @@ _start:
     movdqu [rsp], xmm0
     movdqu [rsp+16], xmm0
     
-    mov r8, 5  ; iterate from letter 4 to 0
+    mov r8, 5  ; iterate from letter 4 to 0 !
     encode_pos_loop:
       dec r8
       ; sil = letter
       movzx rax, sil
       inc byte ptr [rsp+rax] ; add to ltr_count
 
-      imul rbx, r8, 26 ; rbx = r8 * 26;
-      add rbx, sil 
+      imul rbx, r8, 26 ; rbx = r8 * 26; !
+      add rbx, sil ; !
       call write_raw_bit
 
-      shr rdx, 8 ; drop last letter
-      cmp r8, 0
-      jne for_ltr_in_ps
+      shr rsi, 8 ; drop last letter
+      cmp r8, 0 ; ! test r8,r8
+      jne encode_pos_loop
     
     xor r8d,r8d
     encode_count_loop:
@@ -73,8 +73,8 @@ _start:
       jne encode_count_loop
 
     ; "lea rax, [rbx + rcx*4 + 16]" MEANS rax = rbx + rcx*4 + 16
-    lea rax, [r12*3]
-    shl rax, 3
+    lea rax, [r12*2+r12]
+    shl rax, 4
     ; rax is now r12*48
 
     ; write bitmaps to memory
@@ -167,7 +167,7 @@ _start:
         shr r8, 8 ; drop last color
         shr rax, 8 ; drop last letter
   
-        cmp r9, 0
+        test r9, r9
         jne for_ltr_in_guess
       
       ; encode 'counts' section
@@ -216,15 +216,28 @@ _start:
       ; bitmask finished!
       
       xor eax,eax ; total_elim
-      xor r9d,r9d ; counter
+      mov r9, 14855 ; counter
+      mov rbx, cached_bitmaps ; memory pointer
+
       for_another_PS:
-        lea rbx, [r13 + r13*4] ; rax = r13 * 5
-        mov r8, [words + rbx] ; ps2
-      
-        inc r9
-        cmp r9, 14855
-        jne for_PS
-      
+        ; take bitmaps from memory [ the heap is SLOWWWWWWWW :( ]
+        ptest xmm0, [rbx]
+        jne word_eliminated
+
+        ptest xmm1, [rbx+16]
+        jne word_eliminated
+
+        ptest xmm2, [rbx+32]
+        je word_not_eliminated
+
+        word_eliminated:
+        inc rax ; add to total_elim
+        
+        word_not_eliminated:
+
+        add rbx, 48
+        dec r9
+        jne for_another_PS
       
       inc r13d
       cmp r13d, 14855
@@ -500,7 +513,7 @@ section .data
   jmp_table:
     dq .gray
     dq .yellow
-  dq .green
+    dq .green
 
 section .bss
   ; each word is 8 bytes (left 3 are 0, right 5 are u8 letters)
