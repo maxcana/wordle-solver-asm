@@ -128,13 +128,13 @@ _start:
   
         .gray:
           mov rbx,0x01
-          mov rcx,al
+          movzx rcx,al
           shl rbx,cl
           or edx,ebx ; write ltrs_with_maximum at al (letter)
   
           ; set up raw index from row (r9) and letter (al)
           imul rbx, r9, 26 ; rbx = r9d * 26;
-          add rbx, al
+          add rbx, rcx
   
           call write_raw_bit ; input: rbx - index. modifies rcx and rbx
           jmp .end
@@ -142,8 +142,8 @@ _start:
           movzx rbx, al
           inc byte [rsp+rbx] ; increase minimum_of_ltr
 
-          imul rbx, r9, 26
-          add rbx, al
+          imul rcx, r9, 26
+          add rbx, rcx
   
           call write_raw_bit
   
@@ -158,8 +158,9 @@ _start:
   
           call write_raw_bit_sequence ; rbx - left, rcx - right.
   
-          imul rbx, r9, 26
-          add rbx, al
+          movzx rbx, al
+          imul rcx, r9, 26
+          add rbx, rcx
   
           call write_raw_bit
   
@@ -202,7 +203,7 @@ _start:
           write_bit:
             imul rbx, r9, 26
             add rbx, 130 ; count section offset
-            add rbx, al
+            add rbx, rcx ; rcx = al
             call write_raw_bit
           
           continue:
@@ -336,11 +337,11 @@ get_colors:
   .loop_1:
   
   movzx r11d, al ; allow addressing of memory
-  inc [rsp+r11] ; take the last character of the secret (al)
+  inc byte [rsp+r11] ; take the last character of the secret (al)
   cmp al, bl
   jne .1 ; if secret[i] == guess[i] 
   add r8, 0x0000000200000000 ; green on left letter (gets shifted to right at the end)
-  dec [rsp+r11]
+  dec byte [rsp+r11]
   .1: ; endif  
   
   shr r8, 8 ; shift the colors each time so its correct at the end
@@ -396,7 +397,7 @@ write_raw_bit:
 
   mov rbx, 1
   shl rbx, 63 ; set up rbx for shifting single bit
-  xor xmm3,xmm3 ; set up xmm3, complementary bitmap for operating
+  pxor xmm3,xmm3 ; set up xmm3, complementary bitmap for operating
   
   cmp rcx, 127
   jbe .x0
@@ -526,7 +527,7 @@ write_raw_bit_sequence:
     cmp r13, 1
     ja .x1_left
     je .x0_right
-    jb .x_left
+    jb .x0_left
 
     .x0_left:
       pinsrq xmm3, r14, 1
@@ -573,7 +574,11 @@ exit:
   ret
 
 
-
+  jmp_table:
+    dq .gray
+    dq .yellow
+    dq .green
+  
 section .data
   msg db "Hello, world!", 0xA
   msg_size equ $ - msg
@@ -581,10 +586,6 @@ section .data
   log_str_1 db "guess "
   log_str_2 db " eliminates "
   log_str_3 db " words on average", 0xA
-  jmp_table:
-    dq .gray
-    dq .yellow
-    dq .green
 
 section .bss
   ; each word is 8 bytes (left 3 are 0, right 5 are u8 letters)
