@@ -1,9 +1,13 @@
 ;---------------------
 ;  NASM Assembler file
 ;---------------------
-section .text
-global _start
+default rel
 
+section .text
+global _start ; linux api
+global main ; windows api
+
+main:
 _start:
   ; Set up arguments for print function
   mov rdi, 1
@@ -16,7 +20,8 @@ _start:
   ; ex: 00 00 00 00 00 07 04 03, 00 00 00 00 00 0B 08 08, ...
   xor r12d,r12d
   for_word:
-    mov rax, [words + r12 * 4 + r12] ; 8 bytes. contains 1 word and the first 3 letters from the next word
+    lea rax, [rel words] ; relative adressing REQUIRED??
+    mov rax, [rax + r12 * 4 + r12] ; 8 bytes. contains 1 word and the first 3 letters from the next word
     ; ex. aahed aal = 61 61 68 65 64  61 61 6c
     ; subtract 61 to make it 00 00 07 04 03  00 00 0B
     ; shift right 3 bytes to make it 00 00 00 00 00 07 04 03
@@ -104,7 +109,7 @@ _start:
       ; encode 'positions' section of bitmask
       mov r9, 5
       mov rax, rdi ; copy pg into rax
-      for_ltr_in_guess: ; iterate right to left (r9 from 4 -> 0)
+      for_ltr_in_pg: ; iterate right to left (r9 from 4 -> 0)
         dec r9
         ; r8w = colors[r9]
         ; al = pg[r9]
@@ -126,7 +131,7 @@ _start:
         movzx rbx, r8w; rbx = color (zero-extended)
         jmp qword [jmp_table + rbx*8]
   
-        .gray:
+        gray:
           mov rbx,0x01
           movzx rcx,al
           shl rbx,cl
@@ -137,8 +142,8 @@ _start:
           add rbx, rcx
   
           call write_raw_bit ; input: rbx - index. modifies rcx and rbx
-          jmp .end
-        .yellow:
+          jmp for_ltr_in_pg_end
+        yellow:
           movzx rbx, al
           inc byte [rsp+rbx] ; increase minimum_of_ltr
 
@@ -147,8 +152,8 @@ _start:
   
           call write_raw_bit
   
-          jmp .end
-        .green:
+          jmp for_ltr_in_pg_end
+        green:
           movzx rbx, al
           inc byte [rsp+rbx]
   
@@ -164,17 +169,17 @@ _start:
   
           call write_raw_bit
   
-        .end:
+        for_ltr_in_pg_end:
   
         shr r8, 8 ; drop last color
         shr rax, 8 ; drop last letter
   
         test r9, r9
-        jne for_ltr_in_guess
+        jne for_ltr_in_pg
       
       ; encode 'counts' section
       mov r9, 5
-      for_ltr_in_guess_2:
+      for_ltr_in_pg_2:
         dec r9
         ; r8w = colors[r9] color
         ; al = pg[r9] letter
@@ -212,7 +217,7 @@ _start:
           jne for_count
         
         cmp r9, 0
-        jne for_ltr_in_guess_2
+        jne for_ltr_in_pg_2
       
       add rsp, 32
       ; bitmask finished!
@@ -575,9 +580,9 @@ exit:
 
 
   jmp_table:
-    dq .gray
-    dq .yellow
-    dq .green
+    dq gray
+    dq yellow
+    dq green
   
 section .data
   msg db "Hello, world!", 0xA
