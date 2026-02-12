@@ -4,16 +4,20 @@
 default rel
 
 section .text
-global _start ; linux api
-global main ; windows api
+  global _start ; linux api
+  global main ; windows api
+
+; windows api stuff
+  extern GetStdHandle
+  extern WriteFile
+  extern ExitProcess
 
 main:
 _start:
   ; Set up arguments for print function
-  mov rdi, 1
+  mov rdi, msg_size
   lea rsi, [rel msg]
-  mov rdx, msg_size
-  call print
+  call win64_print
 
   ; encode words
   ; words_encoded shall be an array with each element = 8 bytes, storing one word
@@ -260,7 +264,7 @@ _start:
     mov rdx, 41 ; rdx: length of string to print
 
     ; write " words on average", 0xA
-    mov r15, rsp ; copy old rsp, so we can restore this later
+    mov r15, rsp ; copy old rsp
     mov rcx, 18
     log_3_loop:
       lea rbx, [rel log_str_3]
@@ -318,11 +322,17 @@ _start:
       dec rcx
       jne log_1_loop
 
-    mov rdi, 1
-    mov rsi, rsp
-    mov rsp, r15 ; ensure 16-byte aligned RSP
+    mov rdi, rdx ; length of string
+    mov rsi, rsp ; address of string to print is at rsp (not aligned)
+
+    add rdx, 0b0000000000000000000000000000000000000000000000000000000000001111
+    and rdx, 0b1111111111111111111111111111111111111111111111111111111111110000 ; round up to nearest 16
+    mov rsp, r15
+    sub rsp, rdx ; ensure 16-byte aligned RSP
     
-    call print
+    call win64_print
+
+    mov rsp, r15 ; revive old rsp
 
     inc r12d
     cmp r12d, 14855
@@ -330,7 +340,7 @@ _start:
   
   ; Set up arguments for exit function
   xor rdi, rdi
-  call exit
+  call win64_exit
 
 ; rdi - guess in the form 00 00 00 00 00 07 04 03
 ; rsi - secret in the form 00 00 00 00 00 07 04 03
@@ -592,11 +602,41 @@ exit:
   pop rbp
   ret
 
+; rsi - Pointer to the string to print
+; rdi - Length of the string
+; modifies: rcx, rdx, rax, r8, r9
+; Return: None
+win64_print:
+  sub rsp, 48 ; [32 shadow ... 8 local ... 8 unused, for alignment]
 
-  jmp_table:
-    dq gray
-    dq yellow
-    dq green
+  ; GetStdHandle(STD_OUTPUT_HANDLE)
+  mov rcx, -11
+  call GetStdHandle
+
+  ; Prepare WriteFile
+  mov rcx, rax ; hFile
+  mov rdx, rsi ; lpBuffer
+  mov r8, rdi ; nBytesToWrite
+  lea r9, [rsp+32] ; lpBytesWritten (ptr to local variable)
+  mov qword [rsp+32], 0 ; clear bytes 32-39 (lpBytesWritten)
+
+  mov qword [rsp+24], 0 ; 5th param (lpOverlapped)
+
+  call WriteFile
+
+  add rsp, 48
+  ret
+
+win64_exit:
+  ; ExitProcess(0)
+  xor rcx,rcx
+  call ExitProcess
+  hlt
+
+jmp_table:
+  dq gray
+  dq yellow
+  dq green
   
 section .data
   msg db "Hello, world!", 0xA
