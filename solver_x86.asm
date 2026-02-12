@@ -21,13 +21,16 @@ _start:
   xor r12d,r12d
   for_word:
     lea rax, [rel words] ; relative adressing REQUIRED??
-    mov rax, [rax + r12 * 4 + r12] ; 8 bytes. contains 1 word and the first 3 letters from the next word
+    lea rax, [rax + r12]
+    mov rax, [rax + r12 * 4] ; 8 bytes. contains 1 word and the first 3 letters from the next word
     ; ex. aahed aal = 61 61 68 65 64  61 61 6c
     ; subtract 61 to make it 00 00 07 04 03  00 00 0B
     ; shift right 3 bytes to make it 00 00 00 00 00 07 04 03
-    sub rax, 0x6161616161616161
+    mov rbx, 0x6161616161616161
+    sub rax, rbx
     shr rax, 24
-    mov [words_encoded+r12*8], rax
+    lea rbx, [rel words_encoded]
+    mov [rbx+r12*8], rax
     inc r12
     cmp r12, 14855
     jne for_word
@@ -35,8 +38,9 @@ _start:
   ; encode bitmap cache
   xor r12d,r12d
   cache_loop:
+    lea rbx, [rel words]
     lea rax, [r12 + r12*4] ; rax = r12 * 5
-    mov rsi, [words + rax] ; ps
+    mov rsi, [rbx + rax] ; ps
 
     pxor xmm0,xmm0
     pxor xmm1,xmm1
@@ -83,9 +87,10 @@ _start:
     ; rax is now r12*48
 
     ; write bitmaps to memory
-    movdqu [cached_bitmaps+rax+0], xmm0
-    movdqu [cached_bitmaps+rax+16], xmm1
-    movdqu [cached_bitmaps+rax+32], xmm2
+    lea rbx, [rel cached_bitmaps]
+    movdqu [rbx+rax+0], xmm0
+    movdqu [rbx+rax+16], xmm1
+    movdqu [rbx+rax+32], xmm2
     
     inc r12
     cmp r12, 14855
@@ -96,14 +101,16 @@ _start:
   ; for PS
   xor r12d,r12d
   for_PG:
-    lea rax, [r12 + r12*4] ; rax = r12 * 5
-    mov rdi, [words + rax] ; pg (last 5 bytes, ignore first 3)
+    lea rax, [rel words] ; rax = r12 * 5
+    lea rax, [rax + r12]
+    mov rdi, [r12*4 + rax] ; pg (last 5 bytes, ignore first 3)
 
     xor r10d,r10d ; total_elim
   
     for_PS:
       lea rax, [r13 + r13*4] ; rax = r13 * 5
-      mov rsi, [words + rax] ; ps
+      lea rbx, [rel words]
+      mov rsi, [rbx + rax] ; ps
       call get_colors ; r8 - colors in the form 00 00 00 01 02 00 02 01
   
       ; encode 'positions' section of bitmask
@@ -129,7 +136,8 @@ _start:
         pxor xmm2, xmm2 ; initialize bitmask
   
         movzx rbx, r8w; rbx = color (zero-extended)
-        jmp qword [jmp_table + rbx*8]
+        lea r15, [rel jmp_table] ; temp
+        jmp qword [r15 + rbx*8]
   
         gray:
           mov rbx,0x01
@@ -223,7 +231,7 @@ _start:
       ; bitmask finished!
       
       mov r9, 14855 ; counter
-      mov rbx, cached_bitmaps ; memory pointer
+      lea rbx, [rel cached_bitmaps] ; memory pointer
 
       for_another_PS:
         ; take bitmaps from memory [ the heap is SLOWWWWWWWW :( ]
@@ -255,7 +263,8 @@ _start:
     mov r15, rsp ; copy old rsp, so we can restore this later
     mov rcx, 18
     log_3_loop:
-      mov al, byte [log_str_3+rcx]
+      lea rbx, [rel log_str_3]
+      mov al, byte [rbx+rcx]
       dec rsp
       mov [rsp], al
       dec rcx
@@ -281,7 +290,8 @@ _start:
     ; write " eliminates "
     mov rcx, 12
     log_2_loop:
-      mov al, byte [log_str_2+rcx]
+      lea rbx, [rel log_str_2]
+      mov al, byte [rbx+rcx]
       dec rsp
       mov [rsp], al
       dec rcx
@@ -301,7 +311,8 @@ _start:
     ; write "guess "
     mov rcx, 6
     log_1_loop:
-      mov al, byte [log_str_1+rcx]
+      lea rbx, [rel log_str_1]
+      mov al, byte [rbx+rcx]
       dec rsp
       mov [rsp], al
       dec rcx
@@ -341,21 +352,23 @@ get_colors:
   mov rbx, rdi ; copy guess into rbx
   .loop_1:
   
-  movzx r11d, al ; allow addressing of memory
-  inc byte [rsp+r11] ; take the last character of the secret (al)
-  cmp al, bl
-  jne .1 ; if secret[i] == guess[i] 
-  add r8, 0x0000000200000000 ; green on left letter (gets shifted to right at the end)
-  dec byte [rsp+r11]
-  .1: ; endif  
-  
-  shr r8, 8 ; shift the colors each time so its correct at the end
-  shr rax, 8 ; drop the last character of the secret
-  shr rbx, 8 ; drop the last character of the guess
-  
-  inc r9
-  cmp r9, 5
-  jne .loop_1
+    movzx r11d, al ; allow addressing of memory
+    inc byte [rsp+r11] ; take the last character of the secret (al)
+    cmp al, bl
+    jne .1 ; if secret[i] == guess[i] 
+      dec byte [rsp+r11]
+      mov r11, 0x0000000200000000
+      add r8, r11 ; green on left letter (gets shifted to right at the end)
+    
+    .1: ; endif  
+    
+    shr r8, 8 ; shift the colors each time so its correct at the end
+    shr rax, 8 ; drop the last character of the secret
+    shr rbx, 8 ; drop the last character of the guess
+    
+    inc r9
+    cmp r9, 5
+    jne .loop_1
   
   ; r8 (colors) is now of the form 00 00 00 02 01 00 01 01
   ; if we set rdx = shl 24, it becomes 02 01 00 01 01
@@ -368,14 +381,15 @@ get_colors:
   shl rdx, 24 ; rdx is the color checker
   .loop_2:
   
-  cmp rdx, 0x0100000000000000 ; if guess[i] is yellow or green, skip
+  mov rax, 0x0100000000000000
+  cmp rdx, rax ; if guess[i] is yellow or green, skip
   jae .2
   movzx r11d, bl ; allow addressing of memory
   cmp byte [rsp+r11], 0 ; if how_many_yellows == 0, skip
   jne .2
   dec byte [rsp+r11]
   ; since its gray we can OR it with a 00000001 to change it to yellow
-  mov r11, 0x0000000100000000
+  mov r11, rax
   mov rcx, r9
   shl rcx, 3 ; multiply by 8
   shr r11, cl ; shift right by 8*r9
