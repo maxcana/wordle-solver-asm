@@ -125,7 +125,6 @@ _start:
     xor r10d,r10d ; total_elim
     xor r13d,r13d
     for_PS:
-      call debug
       lea rbx, [rel words_encoded]
       mov rsi, [rbx + r13*8] ; ps
       call get_colors ; r8 - colors in the form 00 00 00 01 02 00 02 01
@@ -135,7 +134,7 @@ _start:
       mov rax, rdi ; copy pg into rax
       for_ltr_in_pg: ; iterate right to left (r9 from 4 -> 0)
         dec r9
-        ; r8w = colors[r9]
+        ; r8b = colors[r9]
         ; al = pg[r9]
   
         xor edx,edx ; initialize ltrs_with_maximum (26 bits) (right-to-left)
@@ -152,7 +151,7 @@ _start:
         pxor xmm1, xmm1
         pxor xmm2, xmm2 ; initialize bitmask
   
-        movzx rbx, r8w; rbx = color (zero-extended)
+        movzx rbx, r8b; rbx = color (zero-extended)
         lea r15, [rel jmp_table] ; temp
         jmp qword [r15 + rbx*8]
   
@@ -206,7 +205,7 @@ _start:
       mov r9, 5
       for_ltr_in_pg_2:
         dec r9
-        ; r8w = colors[r9] color
+        ; r8b = colors[r9] color
         ; al = pg[r9] letter
         movzx rcx, al
         ; letter has maximum = leftmost bit of eax == 1. 
