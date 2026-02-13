@@ -56,9 +56,8 @@ _start:
   ; encode bitmap cache
   xor r12d,r12d
   cache_loop:
-    lea rbx, [rel words]
-    lea rax, [r12 + r12*4] ; rax = r12 * 5
-    mov rsi, [rbx + rax] ; ps
+    lea rbx, [rel words_encoded]
+    mov rsi, [rbx + r12*8] ; ps
 
     pxor xmm0,xmm0
     pxor xmm1,xmm1
@@ -98,7 +97,8 @@ _start:
       inc r8
       cmp r8, 26
       jne encode_count_loop
-
+    
+    add rsp, 32
     ; "lea rax, [rbx + rcx*4 + 16]" MEANS rax = rbx + rcx*4 + 16
     lea rax, [r12*2+r12]
     shl rax, 4
@@ -119,17 +119,15 @@ _start:
   ; for PS
   xor r12d,r12d
   for_PG:
-    lea rax, [rel words] ; rax = r12 * 5
-    lea rax, [rax + r12]
-    mov rdi, [r12*4 + rax] ; pg (last 5 bytes, ignore first 3)
+    lea rax, [rel words_encoded]
+    mov rdi, [r12*8 + rax] ; pg (last 5 bytes, ignore first 3)
 
     xor r10d,r10d ; total_elim
     xor r13d,r13d
     for_PS:
       call debug
-      lea rax, [r13 + r13*4] ; rax = r13 * 5
-      lea rbx, [rel words]
-      mov rsi, [rbx + rax] ; ps
+      lea rbx, [rel words_encoded]
+      mov rsi, [rbx + r13*8] ; ps
       call get_colors ; r8 - colors in the form 00 00 00 01 02 00 02 01
   
       ; encode 'positions' section of bitmask
