@@ -12,11 +12,24 @@ section .text
   extern WriteFile
   extern ExitProcess
 
+
+debug:
+  push rdi
+  push rsi
+  mov rdi, msg_size
+  lea rsi, [rel msg]
+  call win64_print
+  pop rsi
+  pop rdi
 main:
 _start:
   ; Set up arguments for print function
   mov rdi, msg_size
-  lea rsi, [rel msg]
+  lea rsi, [rel msg] ; lea rsi, [rel msg] is same as mov rsi, msg. but encoded differently, 
+  ; since you put in the DIFFERENCE (maybe only one byte) instead of the MEMORY (8 bytes) as the operand and use a different opcode (lea vs mov).
+  ; the instruction still returns the same memory address, it just calculates it at runtime.
+  ; must use [rel msg] not [abs msg] or else
+  ; the instruction still returns the same memory address, it just calculates it at runtime.
   call win64_print
 
   ; encode words
@@ -37,6 +50,7 @@ _start:
     mov [rbx+r12*8], rax
     inc r12
     cmp r12, 14855
+
     jne for_word
   
   ; encode bitmap cache
@@ -110,8 +124,9 @@ _start:
     mov rdi, [r12*4 + rax] ; pg (last 5 bytes, ignore first 3)
 
     xor r10d,r10d ; total_elim
-  
+    xor r13d,r13d
     for_PS:
+      call debug
       lea rax, [r13 + r13*4] ; rax = r13 * 5
       lea rbx, [rel words]
       mov rsi, [rbx + rax] ; ps
@@ -257,8 +272,8 @@ _start:
         dec r9
         jne for_another_PS
       
-      inc r13d
-      cmp r13d, 14855
+      inc r13
+      cmp r13, 14855
       jne for_PS
   
     mov rdx, 41 ; rdx: length of string to print
@@ -480,15 +495,15 @@ write_raw_bit:
 ; write a sequence of bits into the xmm0-xmm2 bitmap
 ; rbx: index of leftmost bit (0-285)
 ; rcx: index of rightmost bit (0-285)
-; modifies: rbx, rcx, r13, r14, r15, xmm0, xmm1, xmm2, xmm3
+; modifies: rbx, rcx, r11, r14, r15, xmm0, xmm1, xmm2, xmm3
 ; output: xmm0, xmm1, xmm2 will be updated (via xor with a mask)
 write_raw_bit_sequence:
-  mov r13, rbx
-  shr r13, 6 ; divide by 64
+  mov r11, rbx
+  shr r11, 6 ; divide by 64
   mov r14, rcx
   shr r14, 6 ; divide by 64
-  cmp r13, r14
-  ; r13 = left seg, r14 = right seg
+  cmp r11, r14
+  ; r11 = left seg, r14 = right seg
   je .do_it
 
   ; recursion time
@@ -533,10 +548,10 @@ write_raw_bit_sequence:
   ret
 
   .do_it:
-    shl r13, 6 ; get base index
-    sub rbx, r13
-    sub rcx, r13 ; localize rbx and rcx indexes to the segment
-    shr r13, 6 ; revert change to r13
+    shl r11, 6 ; get base index
+    sub rbx, r11
+    sub rcx, r11 ; localize rbx and rcx indexes to the segment
+    shr r11, 6 ; revert change to r11
 
     ; rcx is now a temp var used for shifting math (original MOVED to r15)
     mov r15, rcx
@@ -549,11 +564,11 @@ write_raw_bit_sequence:
     mov rcx, 127
     sub rcx, r15
     shl r14, cl
-    ; r13 is the segment we want to write to (0-4)
-    cmp r13, 3
+    ; r11 is the segment we want to write to (0-4)
+    cmp r11, 3
     ja .x2_left
     je .x1_right
-    cmp r13, 1
+    cmp r11, 1
     ja .x1_left
     je .x0_right
     jb .x0_left
