@@ -51,9 +51,6 @@ _start:
     mov [rbx+r12*8], rax
     inc r12
     cmp r12, 14855
-    ; initial:                 00 00 07 04 03 00 00 0B
-    ; what we saw in the dump. 00 00 00 0B 00 00 03 04
-    ; did the shift right overflow back over to the left?
 
     jne for_word
   
@@ -132,8 +129,6 @@ _start:
       lea rbx, [rel words_encoded]
       mov rsi, [rbx + r13*8] ; ps
       call get_colors ; r8 - colors in the form 00 00 00 01 02 00 02 01
-
-      ; YIKES, r8 has a 03. this is huge issue. yikes indeed!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   
       ; encode 'positions' section of bitmask
       mov r9, 5
@@ -412,7 +407,9 @@ get_colors:
 
   .loop_2:
     mov rax, 0x0100000000000000
-    cmp rdx, rax ; if guess[i] is yellow or green, skip
+    cmp rdx, rax ; if guess[i from 0 -> 4] is yellow or green, skip
+    ; bl goes from a->a->h->e->d
+    ; rdx's top byte goes from left color to right color (gg___)
     jae .skip
     movzx r11d, bl ; allow addressing of memory
     cmp byte [rsp+r11], 0 ; if how_many_yellows == 0, skip
@@ -420,11 +417,11 @@ get_colors:
 
     dec byte [rsp+r11]
     ; since its gray we can OR it with a 00000001 to change it to yellow
-    mov r11, rax
-    mov rcx, r9
-    shl rcx, 3 ; multiply by 8
-    shr r11, cl ; shift right by 8*r9
-    or r8, r11
+    shr rax, 24 ; offset so we modify the first 4th byte (holds the first color)
+    mov rcx, r9 ; r9 goes from 0 -> 4
+    shl rcx, 3 ; rcx goes from 0,8,16,24,32
+    shr rax, cl ; shift right by 0,8,16,24,32
+    or r8, rax
     
     .skip:
     shr rbx, 8 ; drop the last character of the guess
