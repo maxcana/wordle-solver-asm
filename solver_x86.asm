@@ -133,24 +133,25 @@ _start:
       ; encode 'positions' section of bitmask
       mov r9, 5
       mov rax, rdi ; copy pg into rax
+
+
+      xor edx,edx ; initialize ltrs_with_maximum (26 bits) (right-to-left)      
+      ; initialize minimum_of_ltr array (26 bytes)
+      sub rsp, 32
+      xor ebx,ebx
+      mov [rsp], ebx
+      mov [rsp+8], ebx
+      mov [rsp+16], ebx
+      mov [rsp+24], ebx
+
+      pxor xmm0, xmm0
+      pxor xmm1, xmm1
+      pxor xmm2, xmm2 ; initialize bitmask
+
       for_ltr_in_pg: ; iterate right to left (r9 from 4 -> 0)
         dec r9
         ; r8b = colors[r9]
         ; al = pg[r9]
-  
-        xor edx,edx ; initialize ltrs_with_maximum (26 bits) (right-to-left)
-        
-        ; initialize minimum_of_ltr array (26 bytes)
-        sub rsp, 32
-        xor ebx,ebx
-        mov [rsp], ebx
-        mov [rsp+8], ebx
-        mov [rsp+16], ebx
-        mov [rsp+24], ebx
-
-        pxor xmm0, xmm0
-        pxor xmm1, xmm1
-        pxor xmm2, xmm2 ; initialize bitmask
   
         movzx rbx, r8b; rbx = color (zero-extended). (0,1,2)
         lea r15, [rel jmp_table] ; temp
@@ -274,7 +275,7 @@ _start:
       cmp r13, 14855
       jne for_PS
   
-    mov rdx, 41 ; rdx: length of string to print
+    mov rdx, 39 ; rdx: length of string to print
 
     ; write " words on average", 0xA
     mov r15, rsp ; copy old rsp
@@ -298,6 +299,7 @@ _start:
       ; edx is remainder
       mov r10d, eax
       dec rsp
+      add rdx, "0" ; add the address of "0" on the ascii table
       mov [rsp], dl
       inc rdx
       ; push remainder (last digit) and replace old value with quotient
@@ -674,6 +676,7 @@ section .data
   log_str_1 db "guess "
   log_str_2 db " eliminates "
   log_str_3 db " words on average", 0xA
+  ; literal 33 + 1 ending byte + 5 letters from guess = 39
 
 section .bss
   ; each word is 8 bytes (left 3 are 0, right 5 are u8 letters)
