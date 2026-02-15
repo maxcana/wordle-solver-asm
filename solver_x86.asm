@@ -119,11 +119,15 @@ _start:
   ; for PG
   ; for PS
   xor r12d,r12d
+  sub rsp, 16
+  mov [rsp], r12 ; [rsp] is counter for outermost loop
   for_PG:
     lea rax, [rel words_encoded]
+    mov r12, [rsp] ; temp r12
     mov rdi, [r12*8 + rax] ; pg (last 5 bytes, ignore first 3)
 
-    xor r10d,r10d ; total_elim
+    xor r10d,r10d ; temp r10
+    mov [rsp+8], r10; [rsp+8] is total_elim
     xor r13d,r13d
     for_PS:
       lea rbx, [rel words_encoded]
@@ -263,7 +267,7 @@ _start:
         je word_not_eliminated
 
         word_eliminated:
-        inc r10 ; add to total_elim
+        inc qword [rsp+8] ; add to total_elim
         
         word_not_eliminated:
 
@@ -275,84 +279,88 @@ _start:
       cmp r13, 14855
       jne for_PS
   
-    mov rdx, 39 ; rdx: length of string to print
-
     ; write " words on average", 0xA
     mov r15, rsp ; copy old rsp
     mov rcx, 18
     log_3_loop:
+      dec rcx
       lea rbx, [rel log_str_3]
       mov al, byte [rbx+rcx]
       dec rsp
       mov [rsp], al
-      dec rcx
+      test rcx,rcx
       jne log_3_loop
     
     
     ; write # eliminated words
+    mov rcx, 10 ; divisor for div ecx
+    mov rax, [r15+8] ; total_elim, lower 32 bits of dividend
     log_int_loop:
-      mov edx, 0 ; higher 32 bits of dividend
-      mov eax, r10d ; lower 32 bits of dividend
-      mov ecx, 10 ; divisor
-      div ecx 
+      xor edx,edx ; higher 32 bits of dividend
+      ; eax = dividend
+      div ecx ; divisor
+
       ; eax is quotient
       ; edx is remainder
-      mov r10d, eax
       dec rsp
-      add rdx, "0" ; add the address of "0" on the ascii table
+      add rdx, "0" ; add the ascii value for "0" (0x30)
       mov [rsp], dl
-      inc rdx
       ; push remainder (last digit) and replace old value with quotient
-      cmp r10, 0
+      cmp eax, 0
       jne log_int_loop
 
     ; write " eliminates "
     mov rcx, 12
     log_2_loop:
+      dec rcx
       lea rbx, [rel log_str_2]
       mov al, byte [rbx+rcx]
       dec rsp
       mov [rsp], al
-      dec rcx
+      test rcx,rcx
       jne log_2_loop
 
     ; write GUESS (rdi - guess in the form 00 00 00 00 00 07 04 03)
     mov rcx, 5
     log_guess_loop:
+      dec rcx
       add dil, 0x41
       dec rsp
       mov [rsp], dil ; push letter + 0x41 (letter 'A')
-      shr rdi, 8 ; drop last letter
-      
-      dec rcx
+      shr rdi, 8 ; drop last letter    
+
+      test rcx,rcx
       jne log_guess_loop
     
     ; write "guess "
     mov rcx, 6
     log_1_loop:
+      dec rcx
       lea rbx, [rel log_str_1]
       mov al, byte [rbx+rcx]
       dec rsp
       mov [rsp], al
-      dec rcx
+
+      test rcx,rcx
       jne log_1_loop
 
-    mov rdi, rdx ; length of string
+    mov r14, r15
+    sub r14, rsp ; calculate length of string using difference in stack pointer
+
+    mov rdi, r14 ; length of string
     mov rsi, rsp ; address of string to print is at rsp (not aligned)
 
-    add rdx, 0b0000000000000000000000000000000000000000000000000000000000001111
-    and rdx, 0b1111111111111111111111111111111111111111111111111111111111110000 ; round up to nearest 16
-    mov rsp, r15
-    sub rsp, rdx ; ensure 16-byte aligned RSP
+    and rsp, 0b1111111111111111111111111111111111111111111111111111111111110000 ; round down to 16 atomically (prevent interrupts using invalid stack with shr 4, shl 4)
     
     call win64_print
 
     mov rsp, r15 ; revive old rsp
 
-    inc r12d
-    cmp r12d, 14855
+    inc qword [rsp]
+    cmp qword [rsp], 14855
     jne for_PG
   
+  add rsp, 16
   ; Set up arguments for exit function
   xor rdi, rdi
   call win64_exit
@@ -500,7 +508,7 @@ write_raw_bit:
 ; write a sequence of bits into the xmm0-xmm2 bitmap
 ; rbx: index of leftmost bit (0-285)
 ; rcx: index of rightmost bit (0-285)
-; modifies: rbx, rcx, r11, r14, r15, xmm0, xmm1, xmm2, xmm3
+; modifies: rbx, rcx, r10, r11, r12, r14, r15, xmm0, xmm1, xmm2, xmm3
 ; output: xmm0, xmm1, xmm2 will be updated (via xor with a mask)
 write_raw_bit_sequence:
   mov r11, rbx
@@ -559,56 +567,54 @@ write_raw_bit_sequence:
   ret
 
   .do_it:
-    push r11 ; end me
-    push r14 ; it pains me to do this
+    mov r10, r14
 
-    shl r11, 6 ; get base index
-    sub rbx, r11
-    sub rcx, r11 ; localize rbx and rcx indexes to the segment
-    shr r11, 6 ; revert change to r11
+    mov r12, r11
+    shl r12, 6 ; get base index
+    sub rbx, r12
+    sub rcx, r12 ; localize rbx and rcx indexes to the segment
+    shr r12, 6 ; revert change to r12
 
     ; rcx is now a temp var used for shifting math (original MOVED to r15)
     mov r15, rcx
-    mov r14, 1 ; init r14: bitmap to write into xmm3
+    mov r10, 1 ; init r10: bitmap to write into xmm3
     pxor xmm3, xmm3 ; init xmm3: actual bitmap for XORing
     sub rcx, rbx
     add rcx, 1
-    shl r14, cl
-    sub r14, 1 ; (1u64 << (right-left+1)) - 1)
+    shl r10, cl
+    sub r10, 1 ; (1u64 << (right-left+1)) - 1)
     mov rcx, 127
     sub rcx, r15
-    shl r14, cl
-    ; r11 is the segment we want to write to (0-4)
-    cmp r11, 3
+    shl r10, cl
+    ; r12 is the segment we want to write to (0-4)
+    cmp r12, 3
     ja .x2_left
     je .x1_right
-    cmp r11, 1
+    cmp r12, 1
     ja .x1_left
     je .x0_right
     jb .x0_left
 
     .x0_left:
-      pinsrq xmm3, r14, 1
+      pinsrq xmm3, r10, 1
       pxor xmm0, xmm3
       jmp .end_it
     .x0_right:
-      pinsrq xmm3, r14, 0
+      pinsrq xmm3, r10, 0
       pxor xmm0, xmm3
       jmp .end_it
     .x1_left:
-      pinsrq xmm3, r14, 1
+      pinsrq xmm3, r10, 1
       pxor xmm1, xmm3
       jmp .end_it
     .x1_right:
-      pinsrq xmm3, r14, 0
+      pinsrq xmm3, r10, 0
       pxor xmm1, xmm3
       jmp .end_it
     .x2_left:
-      pinsrq xmm3, r14, 1
+      pinsrq xmm3, r10, 1
       pxor xmm2, xmm3
     .end_it:
-      pop r14
-      pop r11
       ret
 
 ; rdi - File descriptor (1 for stdout)
@@ -676,7 +682,7 @@ section .data
   log_str_1 db "guess "
   log_str_2 db " eliminates "
   log_str_3 db " words on average", 0xA
-  ; literal 33 + 1 ending byte + 5 letters from guess = 39
+  ; literal 36 + 1 ending byte + 5 letters from guess = 42
 
 section .bss
   ; each word is 8 bytes (left 3 are 0, right 5 are u8 letters)

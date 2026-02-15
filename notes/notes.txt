@@ -1,0 +1,20 @@
+debugging
+
+assembly output
+uess  AAHEDeliminates  220616179words on average
+fuess  AALIIeliminates  209952815words on average
+fuess  AAPASeliminates  220609529words on average
+fuess  AARGHeliminates  220622395words on average
+fuess  AARTIeliminates  210236583words on average
+fuess  ABACAeliminates  220485921words on average
+fuess  ABACIeliminates  220418983words on average
+fuess  ABACKeliminates  220416379words on average
+fuess  ABACSeliminates  220490152words on average
+fuess  ABAFTeliminates  220611775words
+
+python output
+starting 1 threads
+Guess AAHED eliminates 13636.37 words on average.
+Progress: 0.0%. Time remaining: 328016s. Counted: 1 / 14855
+Guess AALII eliminates 12974.71 words on average.
+Progress: 0.0%. Time remaining: 323213s. Counted: 2 / 14855
