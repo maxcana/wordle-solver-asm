@@ -617,6 +617,79 @@ write_raw_bit_sequence:
     .end_it:
       ret
 
+; modifies: xmm3, r14, r10, rsi, rdi
+print_bitmap:
+  ; first, write the string backwards  onto the stack
+
+  dec rsp
+  mov [rsp], byte 0xA ; end of string
+
+  ; first newline should be after 286 bits
+  ; we start at bit 384, so 98 bits before the first newline
+  ; 1026-98 = 928
+  mov rdi, 928 ; 26-checker (add carriage return + line feed every 26) (starts at 1000 because we want it to go through the unused bits before actually printing newlines)
+
+  movdqu xmm3, xmm2
+
+  movq r14, xmm3 ; move low 64 bits into register
+  call .append_bits
+  pextrq r14, xmm3, 1 ; move high 64 bits into register
+  call .append_bits
+  
+  movdqu xmm3, xmm1
+
+  movq r14, xmm3
+  call .append_bits
+  pextrq r14, xmm3, 1
+  call .append_bits
+
+  movdqu xmm3, xmm0
+
+  movq r14, xmm3
+  call .append_bits
+  pextrq r14, xmm3, 1
+  call .append_bits
+
+  mov rsi, rsp
+  mov rdi, 396 ; print 384 characters + 11 line feeds + 1 null terminator
+
+  call win64_print
+
+  add rsp, 396 ; fix the stack
+
+  ret
+
+  .append_bits: ; add 64 bits
+    mov rsi, 64 ; counter
+
+    .loop_begin:
+      mov r10b, r14b
+      shl r10b, 3
+      shr r10b, 3 ; find the 0 or 1
+      add r10b, "0" ; write a byte with the character into the stack
+
+      dec rsp
+      mov [rsp], r10b
+
+      shr r14, 1
+
+      inc rdi
+      cmp rdi, 1026
+      jne .isnt ; if we want a newline on the bitmap (every 26 characters, but delayed at the beginning)
+
+      mov rdi, 1000 ; reset the 26-counter
+      
+      dec rsp
+      mov [rsp], byte 0xA ; line feed
+
+      .isnt: ; endif
+
+      dec rsi
+      test rsi,rsi
+      jne .loop_begin
+    ret
+  
+
 ; rdi - File descriptor (1 for stdout)
 ; rsi - Pointer to the string to print
 ; rdx - Length of the string
