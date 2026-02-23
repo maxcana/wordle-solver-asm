@@ -14,13 +14,20 @@ section .text
 
 
 debug:
-  push rdi
-  push rsi
-  mov rdi, msg_size
-  lea rsi, [rel msg]
-  call win64_print
-  pop rsi
-  pop rdi
+  pxor xmm0, xmm0
+  pxor xmm1, xmm1
+  pxor xmm2, xmm2
+
+  mov rcx, 0
+  mov rbx, 25
+  call write_raw_bit_sequence
+
+  mov rbx, 7
+  call write_raw_bit
+
+  call print_bitmap
+
+  hlt
 main:
 _start:
   ; Set up arguments for print function
@@ -31,6 +38,8 @@ _start:
   ; must use [rel msg] not [abs msg] or else compiler instantly complains and doesn't compile
   ; solver_x86.obj:solver_x86.asm:(.text+0x1e): relocation truncated to fit: IMAGE_REL_AMD64_ADDR32 against `.data'
   call win64_print
+
+  ; call debug
 
   ; encode words
   ; words_encoded shall be an array with each element = 8 bytes, storing one word
@@ -251,6 +260,8 @@ _start:
       
       add rsp, 32
       ; bitmask finished!
+
+      call print_bitmap
       
       mov r9, 14855 ; counter
       lea rbx, [rel cached_bitmaps] ; memory pointer
@@ -620,9 +631,16 @@ write_raw_bit_sequence:
 ; modifies: xmm3, r14, r10, rsi, rdi
 print_bitmap:
   ; first, write the string backwards  onto the stack
+  push rbp
 
-  dec rsp
-  mov [rsp], byte 0xA ; end of string
+  mov rbp, rsp ; copy rsp to rbp, which we will decrement and use to write each character
+  ; im not even using rsp for stack modification isnt that crazy
+  ; rsp will stay at the bottom of the allocated space (396 characters) while rbp moves and writes backwards (done to allow calling subroutines)
+  sub rsp, 397
+
+
+  dec rbp
+  mov [rbp], byte 0xA ; end of string
 
   ; first newline should be after 286 bits
   ; we start at bit 384, so 98 bits before the first newline
@@ -650,12 +668,14 @@ print_bitmap:
   pextrq r14, xmm3, 1
   call .append_bits
 
-  mov rsi, rsp
-  mov rdi, 396 ; print 384 characters + 11 line feeds + 1 null terminator
+  mov rsi, rbp
+  mov rdi, 397 ; print 384 characters + 12 line feeds + 1 null terminator
 
   call win64_print
 
-  add rsp, 396 ; fix the stack
+  add rsp, 397 ; fix the stack
+
+  pop rbp
 
   ret
 
@@ -664,12 +684,11 @@ print_bitmap:
 
     .loop_begin:
       mov r10b, r14b
-      shl r10b, 3
-      shr r10b, 3 ; find the 0 or 1
+      and r10b, 0b00000001 ; find the 0 or 1
       add r10b, "0" ; write a byte with the character into the stack
 
-      dec rsp
-      mov [rsp], r10b
+      dec rbp
+      mov [rbp], r10b
 
       shr r14, 1
 
@@ -679,8 +698,8 @@ print_bitmap:
 
       mov rdi, 1000 ; reset the 26-counter
       
-      dec rsp
-      mov [rsp], byte 0xA ; line feed
+      dec rbp
+      mov [rbp], byte 0xA ; line feed
 
       .isnt: ; endif
 
