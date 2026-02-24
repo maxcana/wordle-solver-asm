@@ -13,6 +13,7 @@ section .text
   extern ExitProcess
 
 
+; bitmap testing!
 debug:
   pxor xmm0, xmm0
   pxor xmm1, xmm1
@@ -22,8 +23,8 @@ debug:
   mov rbx, 25
   call write_raw_bit_sequence
 
-  mov rbx, 7
-  call write_raw_bit
+  ; mov rbx, 7
+  ; call write_raw_bit
 
   call print_bitmap
 
@@ -541,6 +542,7 @@ write_raw_bit_sequence:
       mov rcx, r11
       shr rcx, 6
       shl rcx, 6
+      ; and rcx, 0b00000000
       add rcx, 63 ; rcx = round_down(64) + 63
 
       call write_raw_bit_sequence
