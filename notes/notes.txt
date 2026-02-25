@@ -82,3 +82,108 @@ resulted in:
 
 Hmm, what?
 There is an issue here... it should have filled the entire first row, but it added a 1 in index = 282.
+Okay, rbx and rcx were switched, and I forgot to shift right 6 in the subroutine. Now, let's try again.
+
+mov rbx, 0
+mov rcx, 25
+call write_raw_bit_sequence
+
+resulted in:
+
+10000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+
+write_raw_bit_sequence .do_it
+
+maybe figured out the issue.
+if we shift left 26 then subtract 1, what happens is it shifts too far left it goes off bounds and becomes 00000,
+then when subtracting 1 instead of making it 11111, it becomes 10000 signed.. ?? maybe?? not really. let's run through it.
+
+rbx = r11 = 0
+rcx = r14 = 25
+rbx = 0 ; (shr 6)
+rcx = 0 ; (shr 6)
+jmp do_it
+
+
+r12 = r11 = 0
+r12 = 0 ; (shr 6 shl 6)
+rbx = 0 ; (subtract base index)
+rcx = 25 ; (subtract base index)
+r12 = 0 ; (shr 6, make it segment)
+r15 = rcx = 25
+
+r10 = 1 ; THE bitmap
+rcx -= rbx ; rcx = 25
+rcx += 1 ; rcx = 26
+shl r10, cl (26)
+; r10 = 0000000000000000000000000000000000000100000000000000000000000000
+sub r10, 1
+; r10 = 0000000000000000000000000000000000000011111111111111111111111111
+mov rcx, 127
+sub rcx, r15
+; rcx = 127 - 25 = 122
+shl r10, cl (122)
+
+should be 63, not 127.
+retry with 63.
+mov rcx, 63
+sub rcx, r15
+; rcx = 63 - 25 = 38
+shl r10, cl (38)
+; r10 = 1111111111111111111111111100000000000000000000000000000000000000
+; good. what if we tried to fill all 64 though?
+
+
+rbx = r11 = 0
+rcx = r14 = 63
+rbx = 0 ; (shr 6)
+rcx = 0 ; (shr 6)
+jmp do_it
+
+r12 = r11 = 0
+r12 = 0 ; (shr 6 shl 6)
+rbx = 0 ; (subtract base index)
+rcx = 63 ; (subtract base index)
+r12 = 0 ; (shr 6, make it segment)
+r15 = rcx = 63
+
+r10 = 1 ; THE bitmap
+rcx -= rbx ; rcx = 63
+rcx += 1 ; rcx = 64
+shl r10, cl (64)
+; r10 = 0000000000000000000000000000000000000000000000000000000000000000
+sub r10, 1
+; r10 = 1111111111111111111111111111111111111111111111111111111111111111
+
+mov rcx, 63
+sub rcx, r15
+; rcx = 63 - 63 = 0
+shl r10, cl (0)
+; r10 = 1111111111111111111111111111111111111111111111111111111111111111
+; very good!
+
+but i tried it with the fix, nad it now prints
+10000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+which is still incorrect. let's step through it in x64dbg.

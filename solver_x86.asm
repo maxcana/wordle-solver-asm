@@ -19,8 +19,8 @@ debug:
   pxor xmm1, xmm1
   pxor xmm2, xmm2
 
-  mov rcx, 0
-  mov rbx, 25
+  mov rbx, 0
+  mov rcx, 25
   call write_raw_bit_sequence
 
   ; mov rbx, 7
@@ -40,7 +40,7 @@ _start:
   ; solver_x86.obj:solver_x86.asm:(.text+0x1e): relocation truncated to fit: IMAGE_REL_AMD64_ADDR32 against `.data'
   call win64_print
 
-  ; call debug
+  call debug
 
   ; encode words
   ; words_encoded shall be an array with each element = 8 bytes, storing one word
@@ -580,13 +580,14 @@ write_raw_bit_sequence:
   ret
 
   .do_it:
-    mov r10, r14
+    mov rcx, r14 ; move r14 (right) 
 
-    mov r12, r11
+    mov r12, r11 ; move r11 (left) into r12
+    shr r12, 6 ; turn r12 into segment (0-5)
     shl r12, 6 ; get base index
     sub rbx, r12
     sub rcx, r12 ; localize rbx and rcx indexes to the segment
-    shr r12, 6 ; revert change to r12
+    shr r12, 6 ; revert change to r12 (make it segmnent again)
 
     ; rcx is now a temp var used for shifting math (original MOVED to r15)
     mov r15, rcx
@@ -596,7 +597,7 @@ write_raw_bit_sequence:
     add rcx, 1
     shl r10, cl
     sub r10, 1 ; (1u64 << (right-left+1)) - 1)
-    mov rcx, 127
+    mov rcx, 63
     sub rcx, r15
     shl r10, cl
     ; r12 is the segment we want to write to (0-4)
