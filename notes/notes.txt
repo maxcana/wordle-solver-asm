@@ -173,7 +173,7 @@ shl r10, cl (0)
 ; r10 = 1111111111111111111111111111111111111111111111111111111111111111
 ; very good!
 
-but i tried it with the fix, nad it now prints
+but i tried it with the fix, and it now prints
 10000000000000000000000000
 00000000000000000000000000
 00000000000000000000000000
@@ -187,3 +187,53 @@ but i tried it with the fix, nad it now prints
 00000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 which is still incorrect. let's step through it in x64dbg.
+
+fixed using incorrect register
+now it prints
+11111111111111111111111111
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+yes!!!! it works!!!
+
+lets try a single write across multiple segments...
+mov rbx, 0
+  mov rcx, 200
+  call write_raw_bit_sequence
+
+  call print_bitmap
+
+results in:
+00000000000000000000000000
+00000000000000000000000000
+00000000000001111111111111
+11111111111111111111111111
+11111111111111111111111100
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+
+that's not correct. the 1s only started appearing at index 65 and ended at index 127.
+
+ok, the issue was due to shl r10 (1), 64 keeping r10 as 1 when it shouldve become 0.
+    basically there is a case where we want to fill all 64 bits, so we shift left just 1 bit over the highest, so when we subtract 1 all bits are filled.
+    in this rare case, it didn't make it all 0 when it should've, so that when subtracting you get all 1 bits as desired.
+fixed it with a workaround, but now there's an EXCEPTION_PRIV_INSTRUCTION.
+we should step through in x64dbg to find where the issue is.
+
+
+why did it hit x0_left twice?
+ok, the loop index (r11 and r14) are necessary to be saved when calling itself in the recursion, but they get changed every call.
+maybe we add some push/pop, but i really don't want to access the memory at all. i should rewrite this subroutine.

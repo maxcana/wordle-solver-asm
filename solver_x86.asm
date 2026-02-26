@@ -20,11 +20,8 @@ debug:
   pxor xmm2, xmm2
 
   mov rbx, 0
-  mov rcx, 25
+  mov rcx, 200
   call write_raw_bit_sequence
-
-  ; mov rbx, 7
-  ; call write_raw_bit
 
   call print_bitmap
 
@@ -523,6 +520,8 @@ write_raw_bit:
 ; modifies: rbx, rcx, r10, r11, r12, r14, r15, xmm0, xmm1, xmm2, xmm3
 ; output: xmm0, xmm1, xmm2 will be updated (via xor with a mask)
 write_raw_bit_sequence:
+  push r11
+  push r14 ; yikes yikes yikes but sadly need it (for the .loop section)
   mov r11, rbx
   mov r14, rcx
 
@@ -577,10 +576,12 @@ write_raw_bit_sequence:
     cmp r11, r14
     jbe .loop
 
+  pop r14
+  pop r11
   ret
 
   .do_it:
-    mov rcx, r14 ; move r14 (right) 
+    mov rcx, r14 ; move r14 (right) into rcx
 
     mov r12, r11 ; move r11 (left) into r12
     shr r12, 6 ; turn r12 into segment (0-5)
@@ -595,6 +596,11 @@ write_raw_bit_sequence:
     pxor xmm3, xmm3 ; init xmm3: actual bitmap for XORing
     sub rcx, rbx
     add rcx, 1
+    ; why did shl r10 (00000001), 64 not work???? r10 shouldve become 0, but it stayed as 1! ... shifts by >=64 wrap around to 0... ughh... lets put some workaround logic in here
+    cmp cl, 64
+    jb .below_64
+    xor r10d,r10d ; workaround to make it 0 if shifting by >=64
+    .below_64:
     shl r10, cl
     sub r10, 1 ; (1u64 << (right-left+1)) - 1)
     mov rcx, 63
@@ -629,7 +635,21 @@ write_raw_bit_sequence:
       pinsrq xmm3, r10, 1
       pxor xmm2, xmm3
     .end_it:
+      pop r14
+      pop r11
       ret
+
+; write a sequence of bits into the xmm0-xmm2 bitmap
+; rbx: index of leftmost bit (0-285)
+; rcx: index of rightmost bit (0-285)
+; modifies: rbx, rcx, r10, r11, r12, r14, r15, xmm0, xmm1, xmm2, xmm3
+; output: xmm0, xmm1, xmm2 will be updated (via xor with a mask)
+write_raw_bit_sequence_revised:
+  cmp rbx, 64
+
+  cmp rbx, 128
+
+  cmp rbx, 192
 
 ; modifies: xmm3, r14, r10, rsi, rdi
 print_bitmap:
