@@ -645,11 +645,43 @@ write_raw_bit_sequence:
 ; modifies: rbx, rcx, r10, r11, r12, r14, r15, xmm0, xmm1, xmm2, xmm3
 ; output: xmm0, xmm1, xmm2 will be updated (via xor with a mask)
 write_raw_bit_sequence_revised:
-  cmp rbx, 64
+  ; break it into a list of (left and right from 0-64, segment) union (full segments)
+  mov r10, rbx ; make r10 the counter
 
-  cmp rbx, 128
+  and rbx, 0b0000000000000000000000000000000000000000000000000000000000111111; rbx is now local (0-63) to the first segment
+  
+  ; loop section: calculates how many in-between segments are entirely filled, and entirely fill them.
+  ; ex: (left 74) (right 250) -> technically only one segment can be entirely filled (indices 128-191)
+  ; to find that, we take left and round it up to nearest 64. then, we take right and round down to nearest 64.
+  ; then, everything within that area can be entirely filled.
+  ; implementation: r10 starts at (left rounded up 64) and keep adding 64 until it is higher than (right)
+  and r10, 0b1111111111111111111111111111111111111111111111111111111111000000
+  .loop:
 
-  cmp rbx, 192
+  add r10, 64
+  cmp r10, rcx
+  jbe .loop
+
+  and rcx, 0b0000000000000000000000000000000000000000000000000000000000111111 ; rcx is now also local (0-63) to the final segment.
+
+
+  ; rbx = left (0-63), rcx = right (0-63)
+  ; modifies: rcx, r15
+  ; output: r10 is the 64-bit bitmap segment with 1s in specified positions
+  .make_solid_1s:
+    mov r15, rcx ; copy right into r15
+    mov r10, 1
+    sub rcx, rbx
+    add rcx, 1
+    cmp cl, 64
+    jb .below_64
+    xor r10d,r10d ; workaround to make it 0 if shifting by >=64
+    .below_64:
+    shl r10, cl
+    sub r10, 1 ; (1u64 << (right-left+1)) - 1)
+    mov rcx, 63
+    sub rcx, r15 ; (rcx = 63 - right)
+    shl r10, cl
 
 ; modifies: xmm3, r14, r10, rsi, rdi
 print_bitmap:

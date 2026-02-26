@@ -237,3 +237,5 @@ we should step through in x64dbg to find where the issue is.
 why did it hit x0_left twice?
 ok, the loop index (r11 and r14) are necessary to be saved when calling itself in the recursion, but they get changed every call.
 maybe we add some push/pop, but i really don't want to access the memory at all. i should rewrite this subroutine.
+
+now im wondering how the rust code even works, when i did (1u128 << 128) - 1. why did it work perfectly and make 111111... ?
