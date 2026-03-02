@@ -20,8 +20,8 @@ debug:
   pxor xmm2, xmm2
 
   mov rbx, 0
-  mov rcx, 200
-  call write_raw_bit_sequence
+  mov rcx, 300
+  call write_raw_bit_sequence_revised
 
   call print_bitmap
 
@@ -198,7 +198,7 @@ _start:
           imul rcx, r9, 26 ; right
           add rcx, 25
   
-          call write_raw_bit_sequence ; rbx - left, rcx - right.
+          call write_raw_bit_sequence_revised ; rbx - left, rcx - right.
   
           movzx rbx, al
           imul rcx, r9, 26
@@ -648,40 +648,99 @@ write_raw_bit_sequence_revised:
   ; break it into a list of (left and right from 0-64, segment) union (full segments)
   mov r10, rbx ; make r10 the counter
 
-  and rbx, 0b0000000000000000000000000000000000000000000000000000000000111111; rbx is now local (0-63) to the first segment
-  
   ; loop section: calculates how many in-between segments are entirely filled, and entirely fill them.
   ; ex: (left 74) (right 250) -> technically only one segment can be entirely filled (indices 128-191)
   ; to find that, we take left and round it up to nearest 64. then, we take right and round down to nearest 64.
   ; then, everything within that area can be entirely filled.
   ; implementation: r10 starts at (left rounded up 64) and keep adding 64 until it is higher than (right)
+  ; in the example it will iterate with r10 = 128, then r10 = 192.
+  ; we should ignore the first iteration, so just r10 = 192, and fill from 128-191 there.
+  dec r10
   and r10, 0b1111111111111111111111111111111111111111111111111111111111000000
-  .loop:
+  add r10, 64 ; round up to nearest 64
+
+  .loop_first_iter:
+  add r10, 64
+  cmp r10, rcx
+  ja .break  
+
+  .loop_real:
+  ; fill from (r10 - 64 to r10 - 1 inclusive) (eg. 64-127)
+  mov r14, 0b1111111111111111111111111111111111111111111111111111111111111111
+  mov r12, r10
+  shr r12, 6
+  call bigpinsrq
 
   add r10, 64
   cmp r10, rcx
-  jbe .loop
+  jbe .loop_real
 
-  and rcx, 0b0000000000000000000000000000000000000000000000000000000000111111 ; rcx is now also local (0-63) to the final segment.
+  .break:
 
+  mov r11, rbx
+  shr r11, 6 ; r11 = left seg
+  mov r12, rcx
+  shr r12, 6 ; r12 = right seg
 
-  ; rbx = left (0-63), rcx = right (0-63)
-  ; modifies: rcx, r15
-  ; output: r10 is the 64-bit bitmap segment with 1s in specified positions
-  .make_solid_1s:
-    mov r15, rcx ; copy right into r15
-    mov r10, 1
-    sub rcx, rbx
-    add rcx, 1
-    cmp cl, 64
-    jb .below_64
-    xor r10d,r10d ; workaround to make it 0 if shifting by >=64
-    .below_64:
-    shl r10, cl
-    sub r10, 1 ; (1u64 << (right-left+1)) - 1)
-    mov rcx, 63
-    sub rcx, r15 ; (rcx = 63 - right)
-    shl r10, cl
+  and rbx, 0b0000000000000000000000000000000000000000000000000000000000111111; rbx is now local (0-63) to the left segment
+  and rcx, 0b0000000000000000000000000000000000000000000000000000000000111111 ; rcx is now also local (0-63) to the right segment.
+  cmp r11, r12
+  jne .isnt
+  ; if the left and right segment are the same, fill from (local rbx - local rcx) on that segment
+  mov r14, 0b1111111111111111111111111111111111111111111111111111111111111111
+  call bigpinsrq
+
+  .isnt:
+  ; if the left and right segment are different
+  ; fill from (local rbx - 63) on the left segment, and (0 - local rcx) on the right
+  mov r14, 0b1111111111111111111111111111111111111111111111111111111111111111
+  neg rcx
+  add rcx, 64 ; make cl = 64 - rcx
+  shl r14, cl
+  call bigpinsrq
+  
+  mov r14, 0b1111111111111111111111111111111111111111111111111111111111111111
+  mov rcx, rbx ; now we can override rcx without worry, we won't need it anymore
+  shr r14, cl ; shr by rbx
+  mov r12, r11 ; move left seg into subroutine input
+  call bigpinsrq
+
+  ret
+
+  
+; r12 - index to insert to (0-4)
+; r14 - bitmap to insert, which will be XORed with the correct xmm register
+; modifies: only xmm0-3
+bigpinsrq:
+  cmp r12, 3
+  ja .x2_left
+  je .x1_right
+  cmp r12, 1
+  ja .x1_left
+  je .x0_right
+  jb .x0_left
+
+  .x0_left:
+    pinsrq xmm3, r14, 1
+    pxor xmm0, xmm3
+    jmp .end_it
+  .x0_right:
+    pinsrq xmm3, r14, 0
+    pxor xmm0, xmm3
+    jmp .end_it
+  .x1_left:
+    pinsrq xmm3, r14, 1
+    pxor xmm1, xmm3
+    jmp .end_it
+  .x1_right:
+    pinsrq xmm3, r14, 0
+    pxor xmm1, xmm3
+    jmp .end_it
+  .x2_left:
+    pinsrq xmm3, r14, 1
+    pxor xmm2, xmm3
+  .end_it:
+    ret
 
 ; modifies: xmm3, r14, r10, rsi, rdi
 print_bitmap:
