@@ -19,8 +19,8 @@ debug:
   pxor xmm1, xmm1
   pxor xmm2, xmm2
 
-  mov rbx, 0
-  mov rcx, 300
+  mov rbx, 77
+  mov rcx, 200
   call write_raw_bit_sequence_revised
 
   call print_bitmap
@@ -657,15 +657,16 @@ write_raw_bit_sequence_revised:
   ; we should ignore the first iteration, so just r10 = 192, and fill from 128-191 there.
   dec r10
   and r10, 0b1111111111111111111111111111111111111111111111111111111111000000
-  add r10, 64 ; round up to nearest 64
+  add r10, 64 ; round up to nearest (higher) 64
 
+  sub rcx, 64 ; move end 64 left; fix
   .loop_first_iter:
   add r10, 64
   cmp r10, rcx
-  ja .break  
+  jg .break  
 
   .loop_real:
-  ; fill from (r10 - 64 to r10 - 1 inclusive) (eg. 64-127)
+  ; fill from (r10-64 to r10-1 inclusive) (eg. 64 - 127)
   mov r14, 0b1111111111111111111111111111111111111111111111111111111111111111
   mov r12, r10
   shr r12, 6
@@ -673,9 +674,12 @@ write_raw_bit_sequence_revised:
 
   add r10, 64
   cmp r10, rcx
-  jbe .loop_real
+  jle .loop_real
 
   .break:
+  add rcx, 64 ; restore
+
+  ; now time to fill the leftmost and rightmost segment
 
   mov r11, rbx
   shr r11, 6 ; r11 = left seg
@@ -688,21 +692,30 @@ write_raw_bit_sequence_revised:
   jne .isnt
   ; if the left and right segment are the same, fill from (local rbx - local rcx) on that segment
   mov r14, 0b1111111111111111111111111111111111111111111111111111111111111111
+  ; shl by (63-rcx) then shr by rbx
+  neg rcx
+  add rcx, 63
+  shl r14, cl
+  mov rcx, rbx
+  shr r14, cl
   call bigpinsrq
+  ret
 
   .isnt:
   ; if the left and right segment are different
-  ; fill from (local rbx - 63) on the left segment, and (0 - local rcx) on the right
+
+  ; fill from (0 - local rcx) on the right seg
   mov r14, 0b1111111111111111111111111111111111111111111111111111111111111111
   neg rcx
-  add rcx, 64 ; make cl = 64 - rcx
+  add rcx, 63 ; make cl = 63 - rcx
   shl r14, cl
   call bigpinsrq
   
+  ; fill from (local rbx - 63) on the left seg
   mov r14, 0b1111111111111111111111111111111111111111111111111111111111111111
   mov rcx, rbx ; now we can override rcx without worry, we won't need it anymore
   shr r14, cl ; shr by rbx
-  mov r12, r11 ; move left seg into subroutine input
+  mov r12, r11 ; move (left seg index) into subroutine input
   call bigpinsrq
 
   ret
@@ -712,6 +725,7 @@ write_raw_bit_sequence_revised:
 ; r14 - bitmap to insert, which will be XORed with the correct xmm register
 ; modifies: only xmm0-3
 bigpinsrq:
+  pxor xmm3,xmm3
   cmp r12, 3
   ja .x2_left
   je .x1_right
