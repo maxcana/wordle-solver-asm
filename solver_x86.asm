@@ -19,8 +19,8 @@ debug:
   pxor xmm1, xmm1
   pxor xmm2, xmm2
 
-  mov rbx, 77
-  mov rcx, 200
+  mov rbx, 128
+  mov rcx, 285
   call write_raw_bit_sequence_revised
 
   call print_bitmap
@@ -655,21 +655,24 @@ write_raw_bit_sequence_revised:
   ; implementation: r10 starts at (left rounded up 64) and keep adding 64 until it is higher than (right)
   ; in the example it will iterate with r10 = 128, then r10 = 192.
   ; we should ignore the first iteration, so just r10 = 192, and fill from 128-191 there.
-  dec r10
   and r10, 0b1111111111111111111111111111111111111111111111111111111111000000
   add r10, 64 ; round up to nearest (higher) 64
 
-  sub rcx, 64 ; move end 64 left; fix
   .loop_first_iter:
   add r10, 64
   cmp r10, rcx
-  jg .break  
+  jg .break 
+  ; ex. 0-100
+  ; -> 64-100
+  ; -> 128 vs 100
+  ; break
 
   .loop_real:
-  ; fill from (r10-64 to r10-1 inclusive) (eg. 64 - 127)
+  ; fill from (r10-64 to r10-1 inclusive) (ex. 64 - 127)
   mov r14, 0b1111111111111111111111111111111111111111111111111111111111111111
   mov r12, r10
   shr r12, 6
+  sub r12, 1
   call bigpinsrq
 
   add r10, 64
@@ -677,7 +680,6 @@ write_raw_bit_sequence_revised:
   jle .loop_real
 
   .break:
-  add rcx, 64 ; restore
 
   ; now time to fill the leftmost and rightmost segment
 
@@ -692,7 +694,10 @@ write_raw_bit_sequence_revised:
   jne .isnt
   ; if the left and right segment are the same, fill from (local rbx - local rcx) on that segment
   mov r14, 0b1111111111111111111111111111111111111111111111111111111111111111
-  ; shl by (63-rcx) then shr by rbx
+  ; to fill from (50 - 51)
+  ; first << by 62 (63 - (right-left))
+  ; then >> by 50 (left)
+  sub rcx, rbx
   neg rcx
   add rcx, 63
   shl r14, cl
