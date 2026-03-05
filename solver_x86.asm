@@ -37,8 +37,6 @@ _start:
   ; solver_x86.obj:solver_x86.asm:(.text+0x1e): relocation truncated to fit: IMAGE_REL_AMD64_ADDR32 against `.data'
   call win64_print
 
-  call debug
-
   ; encode words
   ; words_encoded shall be an array with each element = 8 bytes, storing one word
   ; ex: 00 00 00 00 00 07 04 03, 00 00 00 00 00 0B 08 08, ...
@@ -169,9 +167,9 @@ _start:
         jmp qword [r15 + rbx*8]
   
         gray:
-          mov rbx,0x01
+          mov ebx,0b01
           movzx rcx,al
-          shl rbx,cl
+          shl ebx,cl ; shift left by ltr
           or edx,ebx ; write ltrs_with_maximum at al (letter)
   
           ; set up raw index from row (r9) and letter (al)
@@ -215,51 +213,55 @@ _start:
         jne for_ltr_in_pg
       
       ; encode 'counts' section
+      mov rax, rdi ; copy pg into rax
       mov r9, 5
-      for_ltr_in_pg_2:
+      for_ltr_in_pg_2: ; r9 from (4...0)
         dec r9
-        ; r8b = colors[r9] color
         ; al = pg[r9] letter
         movzx rcx, al
-        ; letter has maximum = leftmost bit of eax == 1. 
-        ; cmp eax, 0b100... or simply cmp eax, 0.
-        mov eax,edx; copy ltrs_with_maximum array (26 bits) (right-to-left)
-        shr eax, cl
-        shl eax, 31
-        mov rdx, [rsp+rcx] ; rdx = min
+        ; letter has maximum = leftmost bit of r10d == 1.
+        ; cmp r10d, 0b100... or simply cmp r10d, 0.
+        mov r10d, edx; copy ltrs_with_maximum array (26 bits) (right-to-left)
+        shr r10d, cl
+        shl r10d, 31
+        mov edx, [rsp+rcx] ; edx = min
     
-        xor r11d,r11d
-        for_count: ; r11 = count (0-5)
-          cmp eax, 0
+        mov r11d, 6
+        for_count: ; r11d = count (5...0)
+          dec r11d
+          test r10d,r10d
           je no_max
           
           has_max:
-          cmp rdx, r11
-          jne write_bit
+          cmp r11d, edx
+          jne write_bit ; only write if count != min
           je continue
           
           no_max:
-          cmp rdx, r11
-          jbe continue
+          cmp r11d, edx
+          jb continue ; only write if count < min
           
           write_bit:
             imul rbx, r9, 26
             add rbx, 130 ; count section offset
             add rbx, rcx ; rcx = al
             call write_raw_bit
+            call safe_print_bitmap
           
           continue:
-          inc r11
-          cmp r11, 6
+          test r11d, r11d
           jne for_count
+
+        shr rax, 8
         
-        cmp r9, 0
+        test r9,r9
         jne for_ltr_in_pg_2
       
       add rsp, 32
       ; bitmask finished!
 
       call print_bitmap
+      hlt
       
       mov r9, 14855 ; counter
       lea rbx, [rel cached_bitmaps] ; memory pointer
@@ -642,7 +644,7 @@ write_raw_bit_sequence:
 ; write a sequence of bits into the xmm0-xmm2 bitmap
 ; rbx: index of leftmost bit (0-285)
 ; rcx: index of rightmost bit (0-285)
-; modifies: rbx, rcx, r10, r11, r12, r14, r15, xmm0, xmm1, xmm2, xmm3
+; modifies: rbx, rcx, r10, r11, r12, r14, xmm0, xmm1, xmm2, xmm3
 ; output: xmm0, xmm1, xmm2 will be updated (via xor with a mask)
 write_raw_bit_sequence_revised:
   ; break it into a list of (left and right from 0-64, segment) union (full segments)
@@ -761,8 +763,50 @@ bigpinsrq:
   .end_it:
     ret
 
-; modifies: xmm3, r14, r10, rsi, rdi
+safe_print_bitmap:
+  push rax
+  push rbx
+  push rcx
+  push rdx
+  push rsi
+  push rdi
+  push rbp
+  push r8
+  push r9
+  push r10
+  push r11
+  push r12
+  push r13
+  push r14
+  push r15
+  call print_bitmap
+  pop r15
+  pop r14
+  pop r13
+  pop r12
+  pop r11
+  pop r10
+  pop r9
+  pop r8
+  pop rbp
+  pop rdi
+  pop rsi
+  pop rdx
+  pop rcx
+  pop rbx
+  pop rax 
+  ret
+; modifies: xmm3, r14, r10, rsi, rdi, everything that system modifies
+; preserves: xmm0, xmm1, xmm2
 print_bitmap:
+  ; save xmm registers from syscall/windows api
+  sub rsp, 16
+  movdqu [rsp], xmm0
+  sub rsp, 16
+  movdqu [rsp], xmm1
+  sub rsp, 16
+  movdqu [rsp], xmm2
+
   ; first, write the string backwards  onto the stack
   push rbp
 
@@ -810,6 +854,13 @@ print_bitmap:
 
   pop rbp
 
+  ; preserved xmm registers
+  movdqu xmm2, [rsp]
+  add rsp, 16
+  movdqu xmm1, [rsp]
+  add rsp, 16
+  movdqu xmm0, [rsp]
+  add rsp, 16
   ret
 
   .append_bits: ; add 64 bits
@@ -867,6 +918,7 @@ exit:
 ; rsi - Pointer to the string to print
 ; rdi - Length of the string
 ; modifies: rcx, rdx, rax, r8, r9
+; saves: xmm0, xmm1, xmm2
 ; Return: None
 win64_print:
   sub rsp, 48 ; [32 shadow ... 8 local ... 8 unused, for alignment]
