@@ -215,41 +215,42 @@ _start:
       ; encode 'counts' section
       mov rax, rdi ; copy pg into rax
       mov r9, 5
+      mov r10d, edx; copy ltrs_with_maximum array (26 bits) (right-to-left)
       for_ltr_in_pg_2: ; r9 from (4...0)
         dec r9
         ; al = pg[r9] letter
         movzx rcx, al
         ; letter has maximum = leftmost bit of r10d == 1.
         ; cmp r10d, 0b100... or simply cmp r10d, 0.
-        mov r10d, edx; copy ltrs_with_maximum array (26 bits) (right-to-left)
         shr r10d, cl
         shl r10d, 31
-        mov edx, [rsp+rcx] ; edx = min
+        mov dl, byte [rsp+rcx] ; dl = min
     
-        mov r11d, 6
-        for_count: ; r11d = count (5...0)
-          dec r11d
+        mov r11b, 6
+        for_count: ; r11 = count (5...0)
+          dec r11b
           test r10d,r10d
           je no_max
           
           has_max:
-          cmp r11d, edx
+          cmp r11b, dl
           jne write_bit ; only write if count != min
           je continue
           
           no_max:
-          cmp r11d, edx
-          jb continue ; only write if count < min
+          cmp r11b, dl
+          jae continue ; only write if count < min
           
           write_bit:
-            imul rbx, r9, 26
+            movzx rcx, al ; fix rcx, make it ltr again
+            imul rbx, r11, 26
             add rbx, 130 ; count section offset
-            add rbx, rcx ; rcx = al
+            add rbx, rcx ; rcx = al = ltr
             call write_raw_bit
             call safe_print_bitmap
           
           continue:
-          test r11d, r11d
+          test r11b, r11b
           jne for_count
 
         shr rax, 8
@@ -262,7 +263,7 @@ _start:
 
       call print_bitmap
       hlt
-      
+    
       mov r9, 14855 ; counter
       lea rbx, [rel cached_bitmaps] ; memory pointer
 
