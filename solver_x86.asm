@@ -190,6 +190,12 @@ _start:
           jmp for_ltr_in_pg_end
         green:
           movzx rbx, al
+          imul rcx, r9, 26
+          add rbx, rcx
+  
+          call write_raw_bit
+
+          movzx rbx, al
           inc byte [rsp+rbx]
   
           imul rbx, r9, 26 ; left
@@ -197,12 +203,6 @@ _start:
           add rcx, 25
   
           call write_raw_bit_sequence_revised ; rbx - left, rcx - right.
-  
-          movzx rbx, al
-          imul rcx, r9, 26
-          add rbx, rcx
-  
-          call write_raw_bit
   
         for_ltr_in_pg_end:
   
@@ -460,7 +460,7 @@ get_colors:
 ; write a bit into the xmm0-xmm2 bitmap
 ; rbx: index of bit (0-285)
 ; modifies: rbx, rcx, xmm0, xmm1, xmm2, xmm3
-; output: one of xmm0, xmm1, xmm2 will be updated (via xor with a mask)
+; output: one of xmm0, xmm1, xmm2 will be updated (via OR with a mask)
 write_raw_bit:
   mov rcx, rbx ; somehow i inputted rbx to this function everytime, so im making that the official input
 
@@ -482,13 +482,13 @@ write_raw_bit:
   ; Take a 64-bit value from a general-purpose register (or memory), put it into either the low 
   ; or high 64 bits of an XMM register, and leave the other 64 bits alone.
   pinsrq xmm3, rbx, 1
-  pxor xmm0, xmm3
+  por xmm0, xmm3
   ret
   .x0_right:
   sub rcx, 64
   shr rbx, cl
   pinsrq xmm3, rbx, 0
-  pxor xmm0, xmm3
+  por xmm0, xmm3
   ret
 
   .x1:
@@ -498,20 +498,20 @@ write_raw_bit:
   sub rcx, 128
   shr rbx, cl
   pinsrq xmm3, rbx, 1
-  pxor xmm1, xmm3
+  por xmm1, xmm3
   ret
   .x1_right:
   sub rcx, 192
   shr rbx, cl
   pinsrq xmm3, rbx, 0
-  pxor xmm1, xmm3
+  por xmm1, xmm3
   ret
   
   .x2_left:
   sub rcx, 256
   shr rbx, cl
   pinsrq xmm3, rbx, 1
-  pxor xmm2, xmm3
+  por xmm2, xmm3
   ret
   
   .finish:
@@ -521,7 +521,7 @@ write_raw_bit:
 ; rbx: index of leftmost bit (0-285)
 ; rcx: index of rightmost bit (0-285)
 ; modifies: rbx, rcx, r10, r11, r12, r14, r15, xmm0, xmm1, xmm2, xmm3
-; output: xmm0, xmm1, xmm2 will be updated (via xor with a mask)
+; output: xmm0, xmm1, xmm2 will be updated (via XOR with a mask)
 write_raw_bit_sequence:
   push r11
   push r14 ; yikes yikes yikes but sadly need it (for the .loop section)

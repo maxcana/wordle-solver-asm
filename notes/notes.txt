@@ -297,3 +297,21 @@ now it prints
 i think i realize why the CNT0 and CNT1 for "a" are not 1s.
 i think for "aahed" it goes backwards, so writes the 1s for "d", "e", "h", "a". but then when it does "a" again, the XOR makes them 0 again.
 we only want to loop through the unique letters of the word, not the same letters twice. the reason it works in the rust code is we were using OR, not XOR.
+
+ok, ill make write_raw_bit do OR and keep write_raw_bit_sequence as XOR.
+then, we'll switch the order for writing 'positions' for green (OR then XOR), and we get
+
+01111111111111111111111111
+01111111111111111111111111
+11111110111111111111111111
+11110111111111111111111111
+11101111111111111111111111
+10011001000000000000000000
+10000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+
+correct!
