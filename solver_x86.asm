@@ -259,11 +259,15 @@ _start:
       
       add rsp, 32
 
+      cmp rsi, 0x1413040002180B12 ; acyls
+      jne no_debug
       xchg rdi,rsi
       call safe_print_word ; print rdi - guess
       xchg rdi,rsi
       call safe_print_word ; print rsi - secret
       call safe_print_bitmap
+      hlt
+      no_debug:
       ; bitmask finished!
     
       mov r9, 14855 ; counter
