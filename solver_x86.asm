@@ -23,7 +23,7 @@ debug:
   mov rcx, 285
   call write_raw_bit_sequence_revised
 
-  call print_bitmap
+  call safe_print_bitmap
 
   hlt
 main:
@@ -103,7 +103,7 @@ _start:
       inc r8
       cmp r8, 26
       jne encode_count_loop
-    
+
     add rsp, 32
     ; "lea rax, [rbx + rcx*4 + 16]" MEANS rax = rbx + rcx*4 + 16
     lea rax, [r12*2+r12]
@@ -247,7 +247,6 @@ _start:
             add rbx, 130 ; count section offset
             add rbx, rcx ; rcx = al = ltr
             call write_raw_bit
-            call safe_print_bitmap
           
           continue:
           test r11b, r11b
@@ -259,10 +258,13 @@ _start:
         jne for_ltr_in_pg_2
       
       add rsp, 32
-      ; bitmask finished!
 
-      call print_bitmap
-      hlt
+      xchg rdi,rsi
+      call safe_print_word ; print rdi - guess
+      xchg rdi,rsi
+      call safe_print_word ; print rsi - secret
+      call safe_print_bitmap
+      ; bitmask finished!
     
       mov r9, 14855 ; counter
       lea rbx, [rel cached_bitmaps] ; memory pointer
@@ -780,7 +782,23 @@ safe_print_bitmap:
   push r13
   push r14
   push r15
+  ; save xmm registers from syscall/windows api
+  sub rsp, 16
+  movdqu [rsp], xmm0
+  sub rsp, 16
+  movdqu [rsp], xmm1
+  sub rsp, 16
+  movdqu [rsp], xmm2
+
   call print_bitmap
+
+  ; preserved xmm registers
+  movdqu xmm2, [rsp]
+  add rsp, 16
+  movdqu xmm1, [rsp]
+  add rsp, 16
+  movdqu xmm0, [rsp]
+  add rsp, 16
   pop r15
   pop r14
   pop r13
@@ -797,16 +815,9 @@ safe_print_bitmap:
   pop rbx
   pop rax 
   ret
+
 ; modifies: xmm3, r14, r10, rsi, rdi, everything that system modifies
-; preserves: xmm0, xmm1, xmm2
 print_bitmap:
-  ; save xmm registers from syscall/windows api
-  sub rsp, 16
-  movdqu [rsp], xmm0
-  sub rsp, 16
-  movdqu [rsp], xmm1
-  sub rsp, 16
-  movdqu [rsp], xmm2
 
   ; first, write the string backwards  onto the stack
   push rbp
@@ -855,13 +866,6 @@ print_bitmap:
 
   pop rbp
 
-  ; preserved xmm registers
-  movdqu xmm2, [rsp]
-  add rsp, 16
-  movdqu xmm1, [rsp]
-  add rsp, 16
-  movdqu xmm0, [rsp]
-  add rsp, 16
   ret
 
   .append_bits: ; add 64 bits
@@ -892,7 +896,81 @@ print_bitmap:
       test rsi,rsi
       jne .loop_begin
     ret
-  
+
+
+safe_print_word:
+  push rax
+  push rbx
+  push rcx
+  push rdx
+  push rsi
+  push rdi
+  push rbp
+  push r8
+  push r9
+  push r10
+  push r11
+  push r12
+  push r13
+  push r14
+  push r15
+  ; save xmm registers from syscall/windows api
+  sub rsp, 16
+  movdqu [rsp], xmm0
+  sub rsp, 16
+  movdqu [rsp], xmm1
+  sub rsp, 16
+  movdqu [rsp], xmm2
+
+  call print_word
+
+  ; preserved xmm registers
+  movdqu xmm2, [rsp]
+  add rsp, 16
+  movdqu xmm1, [rsp]
+  add rsp, 16
+  movdqu xmm0, [rsp]
+  add rsp, 16
+  pop r15
+  pop r14
+  pop r13
+  pop r12
+  pop r11
+  pop r10
+  pop r9
+  pop r8
+  pop rbp
+  pop rdi
+  pop rsi
+  pop rdx
+  pop rcx
+  pop rbx
+  pop rax 
+  ret
+
+; rsi - word in the form 00 00 00 00 00 07 04 03
+; modifies: caller-saved registers, rsi, rdi, r8
+print_word:
+  mov r8, 5
+  mov rdi, 0x6161616161616161
+  add rsi, rdi
+  loop:
+  ; sil = letter
+  dec rsp
+  mov byte [rsp], sil
+  shr rsi, 8
+  dec r8
+  jne loop
+
+  mov rsi, rsp
+  mov rdi, 5
+  ; push 11 more bytes to keep stack 16-byte aligned for call
+  sub rsp, 11
+
+  ; now we have the stack as ...........AAHED
+  call win64_print
+  add rsp, 16
+
 
 ; rdi - File descriptor (1 for stdout)
 ; rsi - Pointer to the string to print
