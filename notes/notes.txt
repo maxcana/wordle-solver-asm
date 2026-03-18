@@ -392,3 +392,12 @@ what is the correct bitmask?
 so it seems, if we see a gray letter, we are blocking CNT0 and keeping all the other CNTs as 0.
 instead, we should block all CNT except CNT0.
 and, when we saw a green + gray letter, we blocked CNT0 and CNT1, but we actually shouldve blocked CNT0, CNT2, CNT3, CNT4, CNT5
+
+
+ok, i put a conditional breakpoint on the start of 'counts' encoding in x64dbg.
+on aahed vs acyls, edx (ltrs_with_maximum) is 0.
+it shouldn't be 0, since a should have a maximum of 1.
+lets look at the colors.
+after calling get_colors:
+r8 = 0x0000000201010101
+stepping through, it literally iterated and added the 02, then a 01, then 01, 01, 01.

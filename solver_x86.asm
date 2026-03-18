@@ -259,7 +259,7 @@ _start:
       
       add rsp, 32
 
-      cmp rsi, 0x1413040002180B12 ; acyls
+      cmp esi, 0x02180B12 ; acyls
       jne no_debug
       xchg rdi,rsi
       call safe_print_word ; print rdi - guess
