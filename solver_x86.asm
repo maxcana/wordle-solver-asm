@@ -222,22 +222,24 @@ _start:
         movzx rcx, al
         ; letter has maximum = leftmost bit of r10d == 1.
         ; cmp r10d, 0b100... or simply cmp r10d, 0.
-        shr r10d, cl
-        shl r10d, 31
-        mov dl, byte [rsp+rcx] ; dl = min
+        mov edx, r10d
+        shr edx, cl
+        shl edx, 31
     
         mov r11b, 6
         for_count: ; r11 = count (5...0)
           dec r11b
-          test r10d,r10d
+          test edx,edx
           je no_max
           
           has_max:
+          mov dl, byte [rsp+rcx] ; dl = min
           cmp r11b, dl
           jne write_bit ; only write if count != min
           je continue
           
           no_max:
+          mov dl, byte [rsp+rcx] ; dl = min
           cmp r11b, dl
           jae continue ; only write if count < min
           
@@ -259,8 +261,8 @@ _start:
       
       add rsp, 32
 
-      cmp esi, 0x02180B12 ; acyls
-      jne no_debug
+      ; cmp esi, 0x02180B12 ; acyls
+      ; jne no_debug
       xchg rdi,rsi
       call safe_print_word ; print rdi - guess
       xchg rdi,rsi
@@ -268,6 +270,7 @@ _start:
       call safe_print_bitmap
       hlt
       no_debug:
+
       ; bitmask finished!
     
       mov r9, 14855 ; counter
@@ -384,8 +387,8 @@ _start:
   call win64_exit
 
 ; rdi - guess in the form 00 00 00 00 00 07 04 03
-; rsi - secret in the form 00 00 00 00 00 07 04 03
-; Return: r8 - colors in the form 00 00 00 01 02 00 02 01
+; rsi - secret in the form 00 00 00 00 02 18 0B 12
+; Return: r8 - colors in the form 00 00 00 02 00 00 00 00
 ; modifies: rax, rbx, rcx, rdx, r8, r9, r11
 get_colors:
   ; how_many_yellows: 26-length array of bytes
@@ -441,7 +444,7 @@ get_colors:
     jae .skip
     movzx r11d, bl ; allow addressing of memory
     cmp byte [rsp+r11], 0 ; if how_many_yellows == 0, skip
-    jne .skip
+    je .skip
 
     dec byte [rsp+r11]
     ; since its gray we can OR it with a 00000001 to change it to yellow

@@ -395,9 +395,103 @@ and, when we saw a green + gray letter, we blocked CNT0 and CNT1, but we actuall
 
 
 ok, i put a conditional breakpoint on the start of 'counts' encoding in x64dbg.
-on aahed vs acyls, edx (ltrs_with_maximum) is 0.
-it shouldn't be 0, since a should have a maximum of 1.
+on aahed vs acyls, edx (ltrs_with_maximum) is 0x00000000.
+it shouldn't be 0, since 'a' should have a maximum of 1.
 lets look at the colors.
 after calling get_colors:
 r8 = 0x0000000201010101
 stepping through, it literally iterated and added the 02, then a 01, then 01, 01, 01.
+since there was no gray in the colors, that explains why ltrs_with_maximum is 0x00000000.
+
+
+
+ok! i fixed an issue, where I used jne instead of je (to skip adding a yellow)
+now the colors are correct.
+(aahed vs acyls)
+r8 = 0x0000000200000000
+now, after get_colors (right at the encode 'counts' section comment)
+edx (ltrs_with_maximum, right-to-left) = 0x00000099 = 0b00000000000000000000000010011001
+so it's saying a, d, e, h have maximum.
+that is correct! :D 
+
+i spotted another issue, i do:
+mov r10d, edx; copy ltrs_with_maximum array (26 bits) (right-to-left)
+but i only do this the first time. we iterate through every letter in the pg, and each time we shift (mess with) r10d.
+i need to re-copy it every iteration.
+
+now, it outputs
+aahedacyls
+01111111111111111111111111
+10000000000000000000000000
+00000001000000000000000000
+00001000000000000000000000
+00010000000000000000000000
+10000000000000000000000000
+00010000000000000000000000
+10010000000000000000000000
+10010000000000000000000000
+10010000000000000000000000
+10010000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+
+which is looking more correct. but it's still missing bits for 'e' and 'h'
+fixing a new issue with rdx being overwritten when writing the bits, and we now get the output
+
+Hello, world!
+aahedacyls
+01111111111111111111111111
+10000000000000000000000000
+00000001000000000000000000
+00001000000000000000000000
+00010000000000000000000000
+10000000000000000000000000
+10011001000000000000000000
+10011001000000000000000000
+10011001000000000000000000
+10011001000000000000000000
+10011001000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+
+which is entirely correct! yay!
+
+***
+
+now, when running it:
+
+C:\user\dev\assembly\wordle-solver-asm>solver_x86.exe
+Hello, world!
+guess AAHED eliminates 219786227 words on average
+guess AALII eliminates 219541109 words on average
+guess AAPAS eliminates 220665490 words on average
+
+let's check if the guess scores are correct, again.
+
+divide by /14855d
+219786227/14855 = 14795.4376977449
+219541109/14855 = 14778.9369909122
+220665490/14855 = 14854.6273981824
+
+vs python
+Guess AAHED eliminates 13636.37 words on average.
+Guess AALII eliminates 12974.71 words on average.
+
+oh no, eliminating too many again... :(
+
+
+a funny thing is that when doing aahed vs aahed, the bitmask now looks like:
+01111111111111111111111111
+01111111111111111111111111
+11111110111111111111111111
+11110111111111111111111111
+11101111111111111111111111
+00000000000000000000000000
+00000000000000000000000000
+00000001000000000000000000
+10011001000000000000000000
+10011001000000000000000000
+00000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+
+i'll have to check the colors, because the minimum and maximum both look wrong.
+well, the colors are correct: r8 = 0x0000000202020202
+ltrs_with_maximum is correct: rdx = 0x0000000000000000
