@@ -233,14 +233,14 @@ _start:
           je no_max
           
           has_max:
-          mov dl, byte [rsp+rcx] ; dl = min
+          mov bl, byte [rsp+rcx] ; bl = min
           cmp r11b, dl
           jne write_bit ; only write if count != min
           je continue
           
           no_max:
-          mov dl, byte [rsp+rcx] ; dl = min
-          cmp r11b, dl
+          mov bl, byte [rsp+rcx] ; bl = min
+          cmp r11b, bl
           jae continue ; only write if count < min
           
           write_bit:
@@ -261,15 +261,14 @@ _start:
       
       add rsp, 32
 
-      ; cmp esi, 0x02180B12 ; acyls
-      ; jne no_debug
-      xchg rdi,rsi
-      call safe_print_word ; print rdi - guess
-      xchg rdi,rsi
-      call safe_print_word ; print rsi - secret
-      call safe_print_bitmap
-      hlt
-      no_debug:
+      ;; cmp esi, 0x02180B12 ; acyls
+      ;; jne no_debug
+      ; call safe_print_word ; print rdi - guess
+      ; xchg rdi,rsi
+      ; call safe_print_word ; print rsi - secret
+      ; call safe_print_bitmap
+      ; hlt
+      ; no_debug:
 
       ; bitmask finished!
     

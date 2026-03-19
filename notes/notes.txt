@@ -495,3 +495,44 @@ a funny thing is that when doing aahed vs aahed, the bitmask now looks like:
 i'll have to check the colors, because the minimum and maximum both look wrong.
 well, the colors are correct: r8 = 0x0000000202020202
 ltrs_with_maximum is correct: rdx = 0x0000000000000000
+
+
+okay, stepping through the debugger i see the issue
+i overwrite rdx using "mov dl, byte [rsp+rcx] ; dl = min" every count, but i only recalculate it every letter
+i could just store it in the stack, but im sometimes unreasonable
+so we need to find another register to use
+looks like rbx is free, lets use that
+
+we get
+
+aahedaahed
+01111111111111111111111111
+01111111111111111111111111
+11111110111111111111111111
+11110111111111111111111111
+11101111111111111111111111
+10011001000000000000000000
+10000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+
+cool!
+
+test guess scores again:
+guess AAHED eliminates 199954981 words on average
+guess AALII eliminates 184657574 words on average
+
+divide by /14855d
+199954981/14855 = 13460.4497475597
+184657574/14855 = 12430.668057893
+
+vs python
+Guess AAHED eliminates 13636.37 words on average.
+Guess AALII eliminates 12974.71 words on average.
+
+we are very close the the python results, but somehow not eliminating enough words!
+there's probably an edge case that is incorrect and not writing a bit to the bitmask.
+i should print and check random bitmasks and bitmaps, and think of which edge cases
