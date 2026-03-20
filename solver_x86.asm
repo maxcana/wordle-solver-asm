@@ -261,14 +261,15 @@ _start:
       
       add rsp, 32
 
-      ;; cmp esi, 0x02180B12 ; acyls
-      ;; jne no_debug
-      ; call safe_print_word ; print rdi - guess
-      ; xchg rdi,rsi
-      ; call safe_print_word ; print rsi - secret
-      ; call safe_print_bitmap
-      ; hlt
-      ; no_debug:
+      cmp esi, 0x8180404 ; aiyee
+      jne no_debug
+      xchg rdi,rsi
+      call safe_print_word ; print rdi - guess
+      xchg rdi,rsi
+      call safe_print_word ; print rsi - secret
+      call safe_print_bitmap
+      hlt
+      no_debug:
 
       ; bitmask finished!
     

@@ -535,4 +535,49 @@ Guess AALII eliminates 12974.71 words on average.
 
 we are very close the the python results, but somehow not eliminating enough words!
 there's probably an edge case that is incorrect and not writing a bit to the bitmask.
-i should print and check random bitmasks and bitmaps, and think of which edge cases
+i should print and check random bitmasks and bitmaps, and think of which edge cases.
+
+***
+
+does this bitmask look correct?
+(bbbyb)
+apioljolls
+10000000000000000000000000
+00000000000000010000000000
+00000000100000000000000000
+00000000000000100000000000
+00000000000100000000000000
+00000000000100100000000000
+10000000100000010000000000
+10000000100000010000000000
+10000000100000010000000000
+10000000100000010000000000
+10000000100000010000000000
+
+yes, it's correct.
+
+what about this one?
+(gbbgb)
+aahedaiyee
+01111111111111111111111111 (correct)
+10000000000000000000000000 (correct)
+00000001000000000000000000 (correct)
+11110111111111111111111111 (correct)
+00010000000000000000000000 - POS4 (correct)
+00001000000000000000000000 - CNT0
+10010001000000000000000000 - CNT1
+10010001000000000000000000
+10010001000000000000000000
+10010001000000000000000000
+10010001000000000000000000
+
+oh, it's wrong! the correct counts section would look like
+10001000000000000000000000
+00010001000000000000000000
+10010001000000000000000000
+10010001000000000000000000
+10010001000000000000000000
+10010001000000000000000000
+
+so, if there's a letter with green + gray, it thinks that there must be 0 of that letter, when there actually must be 1.
+'a' clearly was in ltrs_with_maximum, but minimum_of_ltr must've been 0, not 1. weird
