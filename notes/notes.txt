@@ -581,3 +581,62 @@ oh, it's wrong! the correct counts section would look like
 
 so, if there's a letter with green + gray, it thinks that there must be 0 of that letter, when there actually must be 1.
 'a' clearly was in ltrs_with_maximum, but minimum_of_ltr must've been 0, not 1. weird
+
+
+stepped through in debugger for aahed vs aiyee
+edx = 0x0000000000000089 = 0b10001001 which says A,D,H have maximum, which is correct.
+the stack says A and E have minimum of 1, and other letters have minimum of 0. (01 00 00 00 01 00 00 ...), which is correct
+
+so it must be a bug with the actual encode 'counts' section code, since the variables are correct
+let's look at when r9 = 0 or 1 ('a' in the guess)
+
+***
+
+i found the issue!!!!!, and maybe another possible issue
+first, rcx may not have been getting reset to the letter each iteration when necessary, but that wasn't the big issue
+the main issue was i forgot to change "dl" to "bl" under has_max and they look similar so i never noticed D:
+
+now, it prints
+aahedaiyee
+01111111111111111111111111
+10000000000000000000000000
+00000001000000000000000000
+11110111111111111111111111
+00010000000000000000000000
+10001000000000000000000000
+00010001000000000000000000
+10010001000000000000000000
+10010001000000000000000000
+10010001000000000000000000
+10010001000000000000000000
+00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+which is correct!!
+
+
+check the numbers again
+
+"""
+C:\user\dev\assembly\wordle-solver-asm>solver_x86.exe
+Hello, world!
+guess AAHED eliminates 207096816 words on average
+guess AALII eliminates 192739272 words on average
+guess AAPAS eliminates 196650911 words on average
+guess AARGH eliminates 205816909 words on average
+"""
+
+divide by /14855d
+207096816/14855 = 13941.2195220464
+192739272/14855 = 12974.7069673511
+196650911/14855 = 13238.0283406261s
+205816909/14855 = 13855.059508583
+
+vs python
+Guess AAHED eliminates 13636.37 words on average.
+Guess AALII eliminates 12974.71 words on average.
+
+
+i ran the python again and got:
+aahed 13636.37
+aalii 12974.71
+aapas 13197.79
+aargh 13032.54

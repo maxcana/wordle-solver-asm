@@ -193,7 +193,7 @@ _start:
           imul rcx, r9, 26
           add rbx, rcx
   
-          call write_raw_bit
+          call write_raw_bit ; increase minimum_of_ltr
 
           movzx rbx, al
           inc byte [rsp+rbx]
@@ -228,13 +228,14 @@ _start:
     
         mov r11b, 6
         for_count: ; r11 = count (5...0)
+          movzx rcx, al ; fix rcx, make it ltr again
           dec r11b
           test edx,edx
           je no_max
           
           has_max:
           mov bl, byte [rsp+rcx] ; bl = min
-          cmp r11b, dl
+          cmp r11b, bl
           jne write_bit ; only write if count != min
           je continue
           
@@ -244,7 +245,6 @@ _start:
           jae continue ; only write if count < min
           
           write_bit:
-            movzx rcx, al ; fix rcx, make it ltr again
             imul rbx, r11, 26
             add rbx, 130 ; count section offset
             add rbx, rcx ; rcx = al = ltr
@@ -261,14 +261,14 @@ _start:
       
       add rsp, 32
 
-      cmp esi, 0x8180404 ; aiyee
-      jne no_debug
-      xchg rdi,rsi
-      call safe_print_word ; print rdi - guess
-      xchg rdi,rsi
-      call safe_print_word ; print rsi - secret
-      call safe_print_bitmap
-      hlt
+      ; cmp esi, 0x8180404 ; aiyee
+      ; jne no_debug
+      ; xchg rdi,rsi
+      ; call safe_print_word ; print rdi - guess
+      ; xchg rdi,rsi
+      ; call safe_print_word ; print rsi - secret
+      ; call safe_print_bitmap
+      ; hlt
       no_debug:
 
       ; bitmask finished!
