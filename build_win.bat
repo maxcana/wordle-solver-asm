@@ -1,13 +1,18 @@
 : $ /assembler -felf64 /assembly.s -o /program.o
 
-del solver_x86.obj
-del solver_x86.exe
+: clean
+rd /s /q compile\win64
+mkdir compile\win64
 
-nasm -f win64 solver_x86.asm -o solver_x86.obj
+: assemble
+nasm -f win64 solver_x86.asm -o compile\win64\solver_x86.obj
+nasm -f win64 helper.asm -o compile\win64\helper.obj
 
-gcc solver_x86.obj -o solver_x86.exe
+: link
+gcc -o compile\win64\solver_x86.exe compile\win64\solver_x86.obj compile\win64\helper.obj
 
-solver_x86.exe
+: run
+compile\win64\solver_x86.exe
 
 
 PAUSE
