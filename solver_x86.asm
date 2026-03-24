@@ -148,10 +148,10 @@ _start:
       ; initialize minimum_of_ltr array (26 bytes)
       sub rsp, 32
       xor ebx,ebx
-      mov [rsp], ebx
-      mov [rsp+8], ebx
-      mov [rsp+16], ebx
-      mov [rsp+24], ebx
+      mov [rsp], rbx
+      mov [rsp+8], rbx
+      mov [rsp+16], rbx
+      mov [rsp+24], rbx
 
       pxor xmm0, xmm0
       pxor xmm1, xmm1
@@ -261,15 +261,23 @@ _start:
       
       add rsp, 32
 
-      ; cmp esi, 0x8180404 ; aiyee
+
+      ; cmp edi, 0x110607 ; aargh
+      ; jne no_debug
+      ; mov r9, rsi
+      ; mov rax, 0x0000FFFFFFFFFF
+      ; and r9, rax
+      ; mov rax, 0x000000000F0012 ; aapas
+      ; cmp r9, rax
       ; jne no_debug
       ; xchg rdi,rsi
       ; call safe_print_word ; print rdi - guess
       ; xchg rdi,rsi
       ; call safe_print_word ; print rsi - secret
       ; call safe_print_bitmap
+
       ; hlt
-      no_debug:
+      ; no_debug:
 
       ; bitmask finished!
     
@@ -288,6 +296,7 @@ _start:
         je word_not_eliminated
 
         word_eliminated:
+        ; WOAH why are we using the stack, lets use a register, YIKES yikes yikes
         inc qword [rsp+8] ; add to total_elim
         
         word_not_eliminated:
