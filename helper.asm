@@ -3,9 +3,7 @@ default rel
 section .text
 ; exports
     global safe_print_bitmap
-    global print_bitmap
     global safe_print_word
-    global print_word
     global print
     global win64_exit
     global linux_exit
@@ -14,9 +12,12 @@ section .text
     extern GetStdHandle
     extern WriteFile
     extern ExitProcess
+    extern ReadFile
 
 
-safe_print_bitmap:
+; macros
+; note: storing this much might be mega slow, so don't print too often
+%macro STR_REGS 0
   push rax
   push rbx
   push rcx
@@ -39,9 +40,8 @@ safe_print_bitmap:
   movdqu [rsp], xmm1
   sub rsp, 16
   movdqu [rsp], xmm2
-
-  call print_bitmap
-
+%endmacro
+%macro LD_REGS 0
   ; preserved xmm registers
   movdqu xmm2, [rsp]
   add rsp, 16
@@ -63,7 +63,12 @@ safe_print_bitmap:
   pop rdx
   pop rcx
   pop rbx
-  pop rax 
+  pop rax
+%endmacro
+safe_print_bitmap:
+  STR_REGS
+  call print_bitmap
+  LD_REGS
   ret
 
 ; modifies: xmm3, r14, r10, rsi, rdi, everything that system modifies
@@ -149,53 +154,9 @@ print_bitmap:
 
 
 safe_print_word:
-  push rax
-  push rbx
-  push rcx
-  push rdx
-  push rsi
-  push rdi
-  push rbp
-  push r8
-  push r9
-  push r10
-  push r11
-  push r12
-  push r13
-  push r14
-  push r15
-  ; save xmm registers from syscall/windows api
-  sub rsp, 16
-  movdqu [rsp], xmm0
-  sub rsp, 16
-  movdqu [rsp], xmm1
-  sub rsp, 16
-  movdqu [rsp], xmm2
-
+  STR_REGS
   call print_word
-
-  ; preserved xmm registers
-  movdqu xmm2, [rsp]
-  add rsp, 16
-  movdqu xmm1, [rsp]
-  add rsp, 16
-  movdqu xmm0, [rsp]
-  add rsp, 16
-  pop r15
-  pop r14
-  pop r13
-  pop r12
-  pop r11
-  pop r10
-  pop r9
-  pop r8
-  pop rbp
-  pop rdi
-  pop rsi
-  pop rdx
-  pop rcx
-  pop rbx
-  pop rax 
+  LD_REGS
   ret
 
 ; rsi - word in the form 00 00 00 00 00 07 04 03
@@ -227,52 +188,22 @@ print_word:
 ; preserves: everything
 ; Return: None
 print:
-  push rax
-  push rbx
-  push rcx
-  push rdx
-  push rsi
-  push rdi
-  push rbp
-  push r8
-  push r9
-  push r10
-  push r11
-  push r12
-  push r13
-  push r14
-  push r15
-  ; save xmm registers from syscall/windows api
-  sub rsp, 16
-  movdqu [rsp], xmm0
-  sub rsp, 16
-  movdqu [rsp], xmm1
-  sub rsp, 16
-  movdqu [rsp], xmm2
-
+  STR_REGS
   call win64_print
+  LD_REGS
+  ret
+; ddddd
+input:
+  STR_REGS
+  ; clear buffer
+  lea rdi, [rel input_buffer]
+  xor al, al
+  mov rcx, 256 ; # bytes to clear
+  rep stosb
 
-  movdqu xmm2, [rsp]
-  add rsp, 16
-  movdqu xmm1, [rsp]
-  add rsp, 16
-  movdqu xmm0, [rsp]
-  add rsp, 16
-  pop r15
-  pop r14
-  pop r13
-  pop r12
-  pop r11
-  pop r10
-  pop r9
-  pop r8
-  pop rbp
-  pop rdi
-  pop rsi
-  pop rdx
-  pop rcx
-  pop rbx
-  pop rax
+  call linux_input
+
+  LD_REGS
   ret
 
 ; rsi - Pointer to the string to print
@@ -300,6 +231,17 @@ linux_exit:
   syscall
   pop rbp
   ret
+
+; Return: rax - number of bytes user has entered (inludes newline)
+linux_input:
+  mov rax, 0 ; sys_read
+  mov rdi, 0 ; file descriptor stdin
+  mov rsi, input_buffer ; address of buffer to store input
+  mov rdx, input_buffer_len
+  ; Return: rax - number of bytes read
+  syscall
+  ret
+
 
 ; rsi - Pointer to the string to print
 ; rdi - Length of the string
@@ -332,3 +274,29 @@ win64_exit:
   call ExitProcess
   hlt
 
+; Return: rax - number of bytes user has entered (inludes newline and carriage return)
+win64_input:
+  sub rsp, 48 ; [32 shadow ... 8 local ... 8 unused, for alignment]
+
+  ; GetStdHandle(STD_OUTPUT_HANDLE)
+  mov rcx, -10
+  call GetStdHandle
+
+  mov rcx, rax ; hFile
+  lea rdx, [rel input_buffer] ; lpBuffer (output)
+  mov r8, input_buffer_len ; nNumberOfBytesToRead
+  mov r9, [rel win64_input_num_bytes_read_output] ; lpNumberOfBytesRead (output)
+  mov qword [rsp + 32], 0 ; lpOverlapped
+  call ReadFile
+
+  mov qword rax, [win64_input_num_bytes_read_output] ; move number of bytes output into rax
+  sub rax, 2 ; clear \r\n
+  ; 
+
+  add rsp, 48
+  ret
+
+section .bss
+  input_buffer resb 256 ; 256 bytes for user input
+  input_buffer_len equ $ - input_buffer
+  win64_input_num_bytes_read resq 1 ; windows ReadFile output

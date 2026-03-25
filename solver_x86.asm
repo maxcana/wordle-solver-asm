@@ -785,6 +785,10 @@ section .data
   log_str_3 db " words on average", 0xA
   ; literal 36 + 1 ending byte + 5 letters from guess = 42
 
+  prompt db "Enter text: ", 0
+  prompt_len equ $ - prompt
+  
+
 section .bss
   ; each word is 8 bytes (left 3 are 0, right 5 are u8 letters)
   ; 14855 words * 8 = 118840 bytes
