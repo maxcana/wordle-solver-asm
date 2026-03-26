@@ -13,8 +13,10 @@ section .text
   extern safe_print_word
   extern print_word
   extern print
+  extern input
   extern win64_exit
   extern linux_exit
+  extern input_buffer ; bss data label - probably just a memory address, like all the other extern labels. all hail the linker
 
 main:
 _start:
@@ -43,6 +45,8 @@ _start:
     sub rax, rbx
     shr rax, 24
     lea rbx, [rel words_encoded]
+    mov [rbx+r12*8], rax
+    lea rbx, [rel possible_secrets]
     mov [rbx+r12*8], rax
     inc r12
     cmp r12, 14855
@@ -114,8 +118,28 @@ _start:
   ; for PG
   ; for PS
   xor r12d,r12d
-  sub rsp, 16
+  sub rsp, 32
   mov [rsp], r12 ; [rsp] is counter for outermost loop
+  mov [rsp+16], r12 ; [rsp+16] is number of possible secrets remaining
+
+  solve:
+  mov rsi, prompt
+  mov rdi, prompt_len
+  call print
+  call input
+  
+  ; ensure length >= 10
+  cmp rax, 10
+  jae no_problem
+    call yikes
+    jmp solve
+  no_problem:
+  ; first 5 bytes of input - extract to encoded word
+  mov rbx, [input_buffer]
+  bswap rbx
+  and rbx, 0b1111111111111111111111111111111111111111111111111111111111111000
+
+
   for_PG:
     lea rax, [rel words_encoded]
     mov r12, [rsp] ; temp r12
@@ -380,7 +404,13 @@ _start:
     cmp qword [rsp], 14855
     jne for_PG
   
-  add rsp, 16
+  mov rsi, press_enter
+  mov rdi, press_enter_len
+  call print
+  call input
+  jmp solve
+
+  add rsp, 32
   ; Set up arguments for exit function
   xor rdi, rdi
   call win64_exit
@@ -785,14 +815,19 @@ section .data
   log_str_3 db " words on average", 0xA
   ; literal 36 + 1 ending byte + 5 letters from guess = 42
 
-  prompt db "Enter text: ", 0
+  prompt db "Enter guess and result (lares __g_y): "
   prompt_len equ $ - prompt
   
+  press_enter db "Press enter to continue...", 0xA
+  press_enter_len equ $ - press_enter
 
 section .bss
   ; each word is 8 bytes (left 3 are 0, right 5 are u8 letters)
   ; 14855 words * 8 = 118840 bytes
-  words_encoded resb 118840
+  words_encoded resb 118840 ; dictionary
+
+  possible_secrets resb 118840 ; dictionary, but is changed as we eliminate words
+
   ; each bitmap needs to store 26*11 bits via 3 XMM registers. (16*3 = 48 bytes)
   ; there are 14855 bitmaps. 14855*48 = 713040
   alignb 16 ; yay! this works. now ptest doesnt give an exception.

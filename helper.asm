@@ -5,8 +5,11 @@ section .text
     global safe_print_bitmap
     global safe_print_word
     global print
+    global input
+    global yikes
     global win64_exit
     global linux_exit
+    global input_buffer ; bss data - output of input subroutine
 
 ; windows api stuff
     extern GetStdHandle
@@ -192,7 +195,8 @@ print:
   call win64_print
   LD_REGS
   ret
-; ddddd
+; Return: rax - number of bytes user has entered (excluding newline)
+; location of output - [input_buffer]
 input:
   STR_REGS
   ; clear buffer
@@ -201,7 +205,7 @@ input:
   mov rcx, 256 ; # bytes to clear
   rep stosb
 
-  call linux_input
+  call win64_input
 
   LD_REGS
   ret
@@ -232,7 +236,8 @@ linux_exit:
   pop rbp
   ret
 
-; Return: rax - number of bytes user has entered (inludes newline)
+; Return: rax - number of bytes user has entered (excluding newline)
+; location of output - [input_buffer]
 linux_input:
   mov rax, 0 ; sys_read
   mov rdi, 0 ; file descriptor stdin
@@ -240,6 +245,13 @@ linux_input:
   mov rdx, input_buffer_len
   ; Return: rax - number of bytes read
   syscall
+
+  dec rax ; remove \n
+
+  ; null terminate (we really don't need to, but whatever) (doesn't count as part of the length)
+  lea rbx, [rel input_buffer]
+  mov byte [rbx + rax], 0
+  
   ret
 
 
@@ -274,7 +286,8 @@ win64_exit:
   call ExitProcess
   hlt
 
-; Return: rax - number of bytes user has entered (inludes newline and carriage return)
+; Return: rax - number of bytes user has entered (excluding newline)
+; location of output - [input_buffer]
 win64_input:
   sub rsp, 48 ; [32 shadow ... 8 local ... 8 unused, for alignment]
 
@@ -291,12 +304,31 @@ win64_input:
 
   mov qword rax, [win64_input_num_bytes_read_output] ; move number of bytes output into rax
   sub rax, 2 ; clear \r\n
-  ; 
+
+  ; add null terminator (optional) (don't count as part of the length)
+  lea rbx, [rel input_buffer]
+  mov byte [rbx + rax], 0
 
   add rsp, 48
   ret
 
+; call when something goes wrong
+; preserves everything
+yikes:
+  push rsi
+  push rdi
+  mov rsi, yikes_msg
+  mov rdi, yikes_len
+  call print
+  pop rdi
+  pop rsi
+  ret
+
 section .bss
-  input_buffer resb 256 ; 256 bytes for user input
+  ; bss data - 256 bytes for user input
+  input_buffer resb 256
   input_buffer_len equ $ - input_buffer
   win64_input_num_bytes_read resq 1 ; windows ReadFile output
+section .data
+  yikes_msg db "yikes"
+  yikes_len equ $ - yikes_msg
