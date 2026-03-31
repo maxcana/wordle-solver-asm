@@ -328,7 +328,7 @@ section .bss
   ; bss data - 256 bytes for user input
   input_buffer resb 256
   input_buffer_len equ $ - input_buffer
-  win64_input_num_bytes_read resq 1 ; windows ReadFile output
+  win64_input_num_bytes_read_output resq 1 ; windows ReadFile output
 section .data
   yikes_msg db "yikes"
   yikes_len equ $ - yikes_msg

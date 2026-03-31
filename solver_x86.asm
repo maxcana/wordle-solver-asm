@@ -128,16 +128,66 @@ _start:
   call print
   call input
   
-  ; ensure length >= 10
-  cmp rax, 10
+  ; format: lares __g_y
+  ; ensure length >= 11
+  cmp rax, 11
   jae no_problem
     call yikes
     jmp solve
   no_problem:
-  ; first 5 bytes of input - extract to encoded word
-  mov rbx, [input_buffer]
-  bswap rbx
-  and rbx, 0b1111111111111111111111111111111111111111111111111111111111111000
+
+  ; bytes 6-10 of input - extract to encoded colors
+  lea rdx, [rel input_buffer]
+  mov rdx, [rdx + 6]
+  shr rdx, 24
+  mov rax, rdx
+  xor edx,edx ; build standard encoded colors
+  ; rax is in the form 00 00 00 _ _ g _ y
+  
+  ; convert (colors as letters) to (standard color form) from right to left
+  mov r12, 5
+  .convert_color: ; r12 from 4..0
+  dec r12
+
+  ; jump to correct address based on letter
+  movzx rcx, al
+  mov rcx, [input_jmp_table + rcx*8]
+  jmp rcx 
+  ; switch statement
+    in_yellow:
+    lea rcx, [-32 + r12*8]
+    neg rcx
+    movzx r8, 0x01
+    jmp .write
+    in_green:
+    lea rcx, [-32 + r12*8]
+    neg rcx
+    movzx r8, 0x02
+    in_gray: ; do nothing
+
+  .write:
+  shl r8, cl
+  or rdx, r8
+
+  
+  shr al, 8 ; drop last letter
+
+  test r12d,r12d
+  jne .convert_color
+
+  ; bytes 0-4 of input - extract to encoded word
+
+  mov rdi, [rel input_buffer]
+  bswap rdi
+  mov rbx, 0x6161616161616161
+  sub rdi, rbx
+  shr rdi, 24
+  
+
+
+  ; rdi = guess in standard form
+  ; rdx = colors in standard form
+
 
 
   for_PG:
@@ -805,7 +855,16 @@ jmp_table:
   dq gray
   dq yellow
   dq green
-  
+
+input_jmp_table:
+  ; (every letter is gray except 'g', 'y')
+
+  times 0x67 dq in_gray ; define 0x67 quadwords of in_gray
+  dq in_yellow
+  times (0x79 - 0x67 - 1) dq in_gray ; define 17 qwords of in_gray
+  dq in_green
+  times 200 dq in_gray ; define a bunch more of in_gray
+
 section .data
   msg db "Hello, world!", 0xA
   msg_size equ $ - msg
