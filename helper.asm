@@ -156,6 +156,8 @@ print_bitmap:
     ret
 
 
+; rsi - word in the form 00 00 00 00 00 07 04 03
+; preserves everything
 safe_print_word:
   STR_REGS
   call print_word

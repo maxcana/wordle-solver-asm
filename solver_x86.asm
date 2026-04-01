@@ -14,6 +14,7 @@ section .text
   extern print_word
   extern print
   extern input
+  extern yikes
   extern win64_exit
   extern linux_exit
   extern input_buffer ; bss data label - probably just a memory address, like all the other extern labels. all hail the linker
@@ -114,15 +115,9 @@ _start:
     cmp r12, 14855
     jne cache_loop
   
-  ; begin main solver
-  ; for PG
-  ; for PS
-  xor r12d,r12d
-  sub rsp, 32
-  mov [rsp], r12 ; [rsp] is counter for outermost loop
-  mov [rsp+16], r12 ; [rsp+16] is number of possible secrets remaining
 
-  solve:
+  main_loop:
+  ; MARK: Input
   mov rsi, prompt
   mov rdi, prompt_len
   call print
@@ -133,47 +128,50 @@ _start:
   cmp rax, 11
   jae no_problem
     call yikes
-    jmp solve
+    jmp main_loop
   no_problem:
 
   ; bytes 6-10 of input - extract to encoded colors
-  lea rdx, [rel input_buffer]
-  mov rdx, [rdx + 6]
-  shr rdx, 24
-  mov rax, rdx
-  xor edx,edx ; build standard encoded colors
+  lea r8, [rel input_buffer]
+  mov r8, [r8 + 6]
+  shr r8, 24
+  mov rax, r8
+  xor r8d,r8d ; build standard encoded colors
   ; rax is in the form 00 00 00 _ _ g _ y
   
   ; convert (colors as letters) to (standard color form) from right to left
   mov r12, 5
-  .convert_color: ; r12 from 4..0
-  dec r12
 
-  ; jump to correct address based on letter
-  movzx rcx, al
-  mov rcx, [input_jmp_table + rcx*8]
-  jmp rcx 
-  ; switch statement
-    in_yellow:
-    lea rcx, [-32 + r12*8]
-    neg rcx
-    movzx r8, 0x01
-    jmp .write
-    in_green:
-    lea rcx, [-32 + r12*8]
-    neg rcx
-    movzx r8, 0x02
-    in_gray: ; do nothing
+  convert_color_loop: ; r12 from 4..0
+    dec r12
 
-  .write:
-  shl r8, cl
-  or rdx, r8
+    ; jump to correct address based on color (as letter)
+    movzx r9, al ; temp r9
+    lea rcx, [rel input_jmp_table]
+    mov rcx, [rcx + r9*8] ; get value at address of jump table
+    jmp rcx 
+    ; switch statement
+      in_yellow:
+      lea rcx, [-32 + r12*8]
+      neg rcx
+      mov edx, 0x01
+      jmp write_enc_color
+      in_green:
+      lea rcx, [-32 + r12*8]
+      neg rcx
+      mov edx, 0x02
+      in_gray: ; do nothing
+      xor edx,edx
 
-  
-  shr al, 8 ; drop last letter
+    write_enc_color:
+    shl rdx, cl
+    or r8, rdx
 
-  test r12d,r12d
-  jne .convert_color
+    
+    shr al, 8 ; drop last letter
+
+    test r12d,r12d
+    jne convert_color_loop
 
   ; bytes 0-4 of input - extract to encoded word
 
@@ -184,11 +182,23 @@ _start:
   shr rdi, 24
   
 
-
   ; rdi = guess in standard form
-  ; rdx = colors in standard form
+  ; r8 = colors in standard form
 
+  mov rsi, rdi
+  call safe_print_word
+  mov rsi, r8
+  call safe_print_word
 
+  call make_bitmask
+
+  ; MARK: Solver
+  ; for PG
+  ; for PS
+  xor r12d,r12d
+  sub rsp, 32
+  mov [rsp], r12 ; [rsp] is counter for outermost loop
+  mov [rsp+16], r12 ; [rsp+16] is number of possible secrets remaining
 
   for_PG:
     lea rax, [rel words_encoded]
@@ -203,147 +213,7 @@ _start:
       mov rsi, [rbx + r13*8] ; ps
       call get_colors ; r8 - colors in the form 00 00 00 01 02 00 02 01
   
-      ; encode 'positions' section of bitmask
-      mov r9, 5
-      mov rax, rdi ; copy pg into rax
-
-
-      xor edx,edx ; initialize ltrs_with_maximum (26 bits) (right-to-left)      
-      ; initialize minimum_of_ltr array (26 bytes)
-      sub rsp, 32
-      xor ebx,ebx
-      mov [rsp], rbx
-      mov [rsp+8], rbx
-      mov [rsp+16], rbx
-      mov [rsp+24], rbx
-
-      pxor xmm0, xmm0
-      pxor xmm1, xmm1
-      pxor xmm2, xmm2 ; initialize bitmask
-
-      for_ltr_in_pg: ; iterate right to left (r9 from 4 -> 0)
-        dec r9
-        ; r8b = colors[r9]
-        ; al = pg[r9]
-  
-        movzx rbx, r8b; rbx = color (zero-extended). (0,1,2)
-        lea r15, [rel jmp_table] ; temp
-        jmp qword [r15 + rbx*8]
-  
-        gray:
-          mov ebx,0b01
-          movzx rcx,al
-          shl ebx,cl ; shift left by ltr
-          or edx,ebx ; write ltrs_with_maximum at al (letter)
-  
-          ; set up raw index from row (r9) and letter (al)
-          imul rbx, r9, 26 ; rbx = r9d * 26;
-          add rbx, rcx
-  
-          call write_raw_bit ; input: rbx - index. modifies rcx and rbx
-          jmp for_ltr_in_pg_end
-        yellow:
-          movzx rbx, al
-          inc byte [rsp+rbx] ; increase minimum_of_ltr
-
-          imul rcx, r9, 26
-          add rbx, rcx
-  
-          call write_raw_bit
-  
-          jmp for_ltr_in_pg_end
-        green:
-          movzx rbx, al
-          imul rcx, r9, 26
-          add rbx, rcx
-  
-          call write_raw_bit ; increase minimum_of_ltr
-
-          movzx rbx, al
-          inc byte [rsp+rbx]
-  
-          imul rbx, r9, 26 ; left
-          imul rcx, r9, 26 ; right
-          add rcx, 25
-  
-          call write_raw_bit_sequence_revised ; rbx - left, rcx - right.
-  
-        for_ltr_in_pg_end:
-  
-        shr r8, 8 ; drop last color
-        shr rax, 8 ; drop last letter
-  
-        test r9, r9
-        jne for_ltr_in_pg
-      
-      ; encode 'counts' section
-      mov rax, rdi ; copy pg into rax
-      mov r9, 5
-      mov r10d, edx; copy ltrs_with_maximum array (26 bits) (right-to-left)
-      for_ltr_in_pg_2: ; r9 from (4...0)
-        dec r9
-        ; al = pg[r9] letter
-        movzx rcx, al
-        ; letter has maximum = leftmost bit of r10d == 1.
-        ; cmp r10d, 0b100... or simply cmp r10d, 0.
-        mov edx, r10d
-        shr edx, cl
-        shl edx, 31
-    
-        mov r11b, 6
-        for_count: ; r11 = count (5...0)
-          movzx rcx, al ; fix rcx, make it ltr again
-          dec r11b
-          test edx,edx
-          je no_max
-          
-          has_max:
-          mov bl, byte [rsp+rcx] ; bl = min
-          cmp r11b, bl
-          jne write_bit ; only write if count != min
-          je continue
-          
-          no_max:
-          mov bl, byte [rsp+rcx] ; bl = min
-          cmp r11b, bl
-          jae continue ; only write if count < min
-          
-          write_bit:
-            imul rbx, r11, 26
-            add rbx, 130 ; count section offset
-            add rbx, rcx ; rcx = al = ltr
-            call write_raw_bit
-          
-          continue:
-          test r11b, r11b
-          jne for_count
-
-        shr rax, 8
-        
-        test r9,r9
-        jne for_ltr_in_pg_2
-      
-      add rsp, 32
-
-
-      ; cmp edi, 0x110607 ; aargh
-      ; jne no_debug
-      ; mov r9, rsi
-      ; mov rax, 0x0000FFFFFFFFFF
-      ; and r9, rax
-      ; mov rax, 0x000000000F0012 ; aapas
-      ; cmp r9, rax
-      ; jne no_debug
-      ; xchg rdi,rsi
-      ; call safe_print_word ; print rdi - guess
-      ; xchg rdi,rsi
-      ; call safe_print_word ; print rsi - secret
-      ; call safe_print_bitmap
-
-      ; hlt
-      ; no_debug:
-
-      ; bitmask finished!
+      call make_bitmask
     
       mov r9, 14855 ; counter
       lea rbx, [rel cached_bitmaps] ; memory pointer
@@ -454,16 +324,167 @@ _start:
     cmp qword [rsp], 14855
     jne for_PG
   
+  ; end of main loop
   mov rsi, press_enter
   mov rdi, press_enter_len
   call print
   call input
-  jmp solve
+  jmp main_loop
 
+  ; exit
   add rsp, 32
   ; Set up arguments for exit function
   xor rdi, rdi
   call win64_exit
+
+; rdi - guess in the form 00 00 00 00 00 07 04 03
+; r8 - colors in the form 00 00 00 02 00 00 00 00
+; Return: xmm0-2 - bitmask
+; modifies: rax, rbx, rcx, rdx, r8, r9, r10, r11
+; preserves: rdi
+make_bitmask:
+  ; encode 'positions' section of bitmask
+  mov r9, 5
+  mov rax, rdi ; copy pg into rax
+
+
+  xor edx,edx ; initialize ltrs_with_maximum (26 bits) (right-to-left)      
+  ; initialize minimum_of_ltr array (26 bytes)
+  sub rsp, 32
+  xor ebx,ebx
+  mov [rsp], rbx
+  mov [rsp+8], rbx
+  mov [rsp+16], rbx
+  mov [rsp+24], rbx
+
+  pxor xmm0, xmm0
+  pxor xmm1, xmm1
+  pxor xmm2, xmm2 ; initialize bitmask
+
+  for_ltr_in_pg: ; iterate right to left (r9 from 4 -> 0)
+    dec r9
+    ; r8b = colors[r9]
+    ; al = pg[r9]
+
+    movzx rbx, r8b; rbx = color (zero-extended). (0,1,2)
+    lea r15, [rel jmp_table] ; temp
+    jmp qword [r15 + rbx*8]
+
+    gray:
+      mov ebx,0b01
+      movzx rcx,al
+      shl ebx,cl ; shift left by ltr
+      or edx,ebx ; write ltrs_with_maximum at al (letter)
+
+      ; set up raw index from row (r9) and letter (al)
+      imul rbx, r9, 26 ; rbx = r9d * 26;
+      add rbx, rcx
+
+      call write_raw_bit ; input: rbx - index. modifies rcx and rbx
+      jmp for_ltr_in_pg_end
+    yellow:
+      movzx rbx, al
+      inc byte [rsp+rbx] ; increase minimum_of_ltr
+
+      imul rcx, r9, 26
+      add rbx, rcx
+
+      call write_raw_bit
+
+      jmp for_ltr_in_pg_end
+    green:
+      movzx rbx, al
+      imul rcx, r9, 26
+      add rbx, rcx
+
+      call write_raw_bit ; increase minimum_of_ltr
+
+      movzx rbx, al
+      inc byte [rsp+rbx]
+
+      imul rbx, r9, 26 ; left
+      imul rcx, r9, 26 ; right
+      add rcx, 25
+
+      call write_raw_bit_sequence_revised ; rbx - left, rcx - right.
+
+    for_ltr_in_pg_end:
+
+    shr r8, 8 ; drop last color
+    shr rax, 8 ; drop last letter
+
+    test r9, r9
+    jne for_ltr_in_pg
+  
+  ; encode 'counts' section
+  mov rax, rdi ; copy pg into rax
+  mov r9, 5
+  mov r10d, edx; copy ltrs_with_maximum array (26 bits) (right-to-left)
+  for_ltr_in_pg_2: ; r9 from (4...0)
+    dec r9
+    ; al = pg[r9] letter
+    movzx rcx, al
+    ; letter has maximum = leftmost bit of r10d == 1.
+    ; cmp r10d, 0b100... or simply cmp r10d, 0.
+    mov edx, r10d
+    shr edx, cl
+    shl edx, 31
+
+    mov r11b, 6
+    for_count: ; r11 = count (5...0)
+      movzx rcx, al ; fix rcx, make it ltr again
+      dec r11b
+      test edx,edx
+      je no_max
+      
+      has_max:
+      mov bl, byte [rsp+rcx] ; bl = min
+      cmp r11b, bl
+      jne write_bit ; only write if count != min
+      je continue
+      
+      no_max:
+      mov bl, byte [rsp+rcx] ; bl = min
+      cmp r11b, bl
+      jae continue ; only write if count < min
+      
+      write_bit:
+        imul rbx, r11, 26
+        add rbx, 130 ; count section offset
+        add rbx, rcx ; rcx = al = ltr
+        call write_raw_bit
+      
+      continue:
+      test r11b, r11b
+      jne for_count
+
+    shr rax, 8
+    
+    test r9,r9
+    jne for_ltr_in_pg_2
+  
+  add rsp, 32
+
+
+  ; cmp edi, 0x110607 ; aargh
+  ; jne no_debug
+  ; mov r9, rsi
+  ; mov rax, 0x0000FFFFFFFFFF
+  ; and r9, rax
+  ; mov rax, 0x000000000F0012 ; aapas
+  ; cmp r9, rax
+  ; jne no_debug
+  ; xchg rdi,rsi
+  ; call safe_print_word ; print rdi - guess
+  ; xchg rdi,rsi
+  ; call safe_print_word ; print rsi - secret
+  ; call safe_print_bitmap
+
+  ; hlt
+  ; no_debug:
+
+  ; bitmask finished!
+  ret
 
 ; rdi - guess in the form 00 00 00 00 00 07 04 03
 ; rsi - secret in the form 00 00 00 00 02 18 0B 12
