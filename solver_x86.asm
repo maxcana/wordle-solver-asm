@@ -45,6 +45,8 @@ _start:
     mov rbx, 0x6161616161616161
     sub rax, rbx
     shr rax, 24
+    ; TODO: I LEFT OFF HERE: write the index! (see the comment chain around eliminate_based_on_info)
+
     lea rbx, [rel words_encoded]
     mov [rbx+r12*8], rax
     lea rbx, [rel possible_secrets]
@@ -115,7 +117,7 @@ _start:
     cmp r12, 14855
     jne cache_loop
   
-
+  mov qword [rel len_possible_secrets], 14855
   main_loop:
   ; MARK: Input
   mov rsi, prompt
@@ -192,6 +194,38 @@ _start:
   call safe_print_word
 
   call make_bitmask
+
+  mov r9, [rel len_possible_secrets] ; counter
+  lea rbx, [rel possible_secrets] ; memory pointer
+  xor r10d,r10d ; new len_ps
+
+  ; if we have a dynamic list of PS, how do we find the correct cached bitmap to use for the word?
+  ; currently, we are finding it by the index. however with a dynamic list, the words will have a variable index.
+  ; we can solve it by using a hashmap from word to bitmap (like we did in Rust)
+  ; or we could simply store the index in the highest 3 bytes of a register holding an encoded word (which is simpler)
+  ; since we are currently just having 00 00 00 there.
+  ; format: 00 00 1F = index 31
+  eliminate_based_on_info: ; UNFINISHED SECTION
+    ptest xmm0, [rbx]
+    jne word_eliminated
+    ptest xmm1, [rbx+16]
+    jne word_eliminated
+    ptest xmm2, [rbx+32]
+    je word_not_eliminated
+
+    word_not_eliminated:
+    ; write to new list
+    inc r10
+
+    word_eliminated:
+    
+    
+
+    add rbx, 48
+    dec r9
+    jne eliminate_based_on_info
+
+  mov [rel len_possible_secrets], r10 ; write new length
 
   ; MARK: Solver
   ; for PG
@@ -908,6 +942,7 @@ section .bss
   words_encoded resb 118840 ; dictionary
 
   possible_secrets resb 118840 ; dictionary, but is changed as we eliminate words
+  len_possible_secrets resq 1
 
   ; each bitmap needs to store 26*11 bits via 3 XMM registers. (16*3 = 48 bytes)
   ; there are 14855 bitmaps. 14855*48 = 713040
