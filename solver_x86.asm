@@ -134,6 +134,7 @@ _start:
   ; bytes 6-10 of input - extract to encoded colors
   lea r8, [rel input_buffer]
   mov r8, [r8 + 6]
+  bswap r8
   shr r8, 24
   mov rax, r8
   xor r8d,r8d ; build standard encoded colors
@@ -148,8 +149,7 @@ _start:
     ; jump to correct address based on color (as letter)
     movzx r9, al ; temp r9
     lea rcx, [rel input_jmp_table]
-    mov rcx, [rcx + r9*8] ; get value at address of jump table
-    jmp rcx 
+    jmp qword [rcx + r9*8] ; get value at address of jump table
     ; switch statement
       in_yellow:
       lea rcx, [-32 + r12*8]
@@ -160,6 +160,7 @@ _start:
       lea rcx, [-32 + r12*8]
       neg rcx
       mov edx, 0x02
+      jmp write_enc_color
       in_gray: ; do nothing
       xor edx,edx
 
@@ -168,7 +169,7 @@ _start:
     or r8, rdx
 
     
-    shr al, 8 ; drop last letter
+    shr rax, 8 ; drop last letter
 
     test r12d,r12d
     jne convert_color_loop
@@ -177,7 +178,7 @@ _start:
 
   mov rdi, [rel input_buffer]
   bswap rdi
-  mov rbx, 0x6161616161616161
+  mov rbx, 0x6161616161000000
   sub rdi, rbx
   shr rdi, 24
   
@@ -881,9 +882,9 @@ input_jmp_table:
   ; (every letter is gray except 'g', 'y')
 
   times 0x67 dq in_gray ; define 0x67 quadwords of in_gray
-  dq in_yellow
-  times (0x79 - 0x67 - 1) dq in_gray ; define 17 qwords of in_gray
   dq in_green
+  times (0x79 - 0x67 - 1) dq in_gray ; define 17 qwords of in_gray
+  dq in_yellow
   times 200 dq in_gray ; define a bunch more of in_gray
 
 section .data

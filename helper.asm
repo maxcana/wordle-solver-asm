@@ -74,7 +74,7 @@ safe_print_bitmap:
   LD_REGS
   ret
 
-; modifies: xmm3, r14, r10, rsi, rdi, everything that system modifies
+; modifies: caller-saved registers, xmm3, r14, r10, rsi, rdi
 print_bitmap:
 
   ; first, write the string backwards  onto the stack
@@ -157,7 +157,7 @@ print_bitmap:
 
 
 ; rsi - word in the form 00 00 00 00 00 07 04 03
-; preserves everything
+; preserves: everything
 safe_print_word:
   STR_REGS
   call print_word
@@ -197,10 +197,11 @@ print:
   call win64_print
   LD_REGS
   ret
+
+; modifies: caller-saved registers, rcx, rax
 ; Return: rax - number of bytes user has entered (excluding newline)
-; location of output - [input_buffer]
+; Output: located at [input_buffer]
 input:
-  STR_REGS
   ; clear buffer
   lea rdi, [rel input_buffer]
   xor al, al
@@ -209,7 +210,7 @@ input:
 
   call win64_input
 
-  LD_REGS
+  ; we do need to output rax
   ret
 
 ; rsi - Pointer to the string to print
@@ -259,7 +260,7 @@ linux_input:
 
 ; rsi - Pointer to the string to print
 ; rdi - Length of the string
-; modifies: rcx, rdx, rax, r8, r9
+; modifies: caller-saved registers, rcx, rdx, rax, r8, r9
 ; Return: None
 win64_print:
   sub rsp, 48 ; [32 shadow ... 8 local ... 8 unused, for alignment]
@@ -300,11 +301,11 @@ win64_input:
   mov rcx, rax ; hFile
   lea rdx, [rel input_buffer] ; lpBuffer (output)
   mov r8, input_buffer_len ; nNumberOfBytesToRead
-  mov r9, [rel win64_input_num_bytes_read_output] ; lpNumberOfBytesRead (output)
+  lea r9, [rel win64_input_num_bytes_read_output] ; lpNumberOfBytesRead (output)
   mov qword [rsp + 32], 0 ; lpOverlapped
   call ReadFile
 
-  mov qword rax, [win64_input_num_bytes_read_output] ; move number of bytes output into rax
+  mov qword rax, [rel win64_input_num_bytes_read_output] ; move number of bytes output into rax
   sub rax, 2 ; clear \r\n
 
   ; add null terminator (optional) (don't count as part of the length)
@@ -315,7 +316,7 @@ win64_input:
   ret
 
 ; call when something goes wrong
-; preserves everything
+; preserves: everything
 yikes:
   push rsi
   push rdi
