@@ -45,7 +45,10 @@ _start:
     mov rbx, 0x6161616161616161
     sub rax, rbx
     shr rax, 24
-    ; TODO: I LEFT OFF HERE: write the index! (see the comment chain around eliminate_based_on_info)
+    ; write the index into the encoded word's first 3 bytes. 00 00 1F = index 31 (see the comment chain around eliminate_based_on_info)
+    mov r14, r12
+    shl r14, 40
+    or rax, r14
 
     lea rbx, [rel words_encoded]
     mov [rbx+r12*8], rax
@@ -183,9 +186,14 @@ _start:
   mov rbx, 0x6161616161000000
   sub rdi, rbx
   shr rdi, 24
+
+  ; MARK: TODO: I left off here: use create_rdi_index to give an index to the encoded word
+  ; then, reformat the way we access the bitmaps so we can eliminate ps.
+  ; (we may have to clear the entire array and rebuild it each time we eliminate some ps)
+  ; then we need to store the length of it, and substitute the scoring from eliminating words_encoded to eliminating possible_secrets.
   
 
-  ; rdi = guess in standard form
+  ; rdi = guess in standard form (MISSING INDEX)
   ; r8 = colors in standard form
 
   mov rsi, rdi
@@ -207,17 +215,17 @@ _start:
   ; format: 00 00 1F = index 31
   eliminate_based_on_info: ; UNFINISHED SECTION
     ptest xmm0, [rbx]
-    jne word_eliminated
+    jne .word_eliminated
     ptest xmm1, [rbx+16]
-    jne word_eliminated
+    jne .word_eliminated
     ptest xmm2, [rbx+32]
-    je word_not_eliminated
+    je .word_not_eliminated
 
-    word_not_eliminated:
+    .word_not_eliminated:
     ; write to new list
     inc r10
 
-    word_eliminated:
+    .word_eliminated:
     
     
 
@@ -256,19 +264,19 @@ _start:
       for_another_PS:
         ; take bitmaps from memory [ the heap is SLOWWWWWWWW :( ]
         ptest xmm0, [rbx] ; ptest only works on 16-byte aligned aligned xmmwords
-        jne word_eliminated
+        jne .word_eliminated
 
         ptest xmm1, [rbx+16]
-        jne word_eliminated
+        jne .word_eliminated
 
         ptest xmm2, [rbx+32]
-        je word_not_eliminated
+        je .word_not_eliminated
 
-        word_eliminated:
+        .word_eliminated:
         ; WOAH why are we using the stack, lets use a register, YIKES yikes yikes
         inc qword [rsp+8] ; add to total_elim
         
-        word_not_eliminated:
+        .word_not_eliminated:
 
         add rbx, 48
         dec r9
@@ -907,6 +915,28 @@ bigpinsrq:
     pxor xmm2, xmm3
   .end_it:
     ret
+
+; rdi - word (without 3-byte index)
+; modifies: r13, rsi, rdi, rbx
+; Return: gives rdi an index
+create_rdi_index:
+  xor r13d, r13d
+  .loop:
+
+  lea rbx, [rel words_encoded]
+  mov rsi, [rbx + r13*8] ; encoded word
+  cmp rdi, rsi
+  je .done
+
+  mov rbx, 0x00_00_01_00_00_00_00_00
+  add rdi, rbx
+
+  inc r13
+  cmp r13, 14855
+  jne .loop
+
+  .done
+
 jmp_table:
   dq gray
   dq yellow
@@ -941,6 +971,7 @@ section .bss
   ; 14855 words * 8 = 118840 bytes
   words_encoded resb 118840 ; dictionary
 
+  alignb 16
   possible_secrets resb 118840 ; dictionary, but is changed as we eliminate words
   len_possible_secrets resq 1
 
