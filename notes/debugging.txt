@@ -790,3 +790,20 @@ aahed 13636.37
 aalii 12974.71
 aapas 13197.79
 aargh 13032.54
+
+
+
+
+
+***
+
+  ; if we have a dynamic list of PS, how do we find the correct cached bitmap to use for the word?
+  ; currently, we are finding it by the index. however with a dynamic list, the words will have a variable index.
+  ; we can solve it by using a hashmap from word to bitmap (like we did in Rust)
+  ; or we could simply store the index in the highest 3 bytes of a register holding an encoded word (which is simpler)
+  ; since we are currently just having 00 00 00 there.
+  ; format: 00 00 1F = index 31
+
+  ; MARK: Eliminate PS
+  ; we clear the entire array and rebuild it each time we eliminate some ps
+  ; then we need to store the length of it

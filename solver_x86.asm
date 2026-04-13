@@ -30,7 +30,7 @@ _start:
   ; solver_x86.obj:solver_x86.asm:(.text+0x1e): relocation truncated to fit: IMAGE_REL_AMD64_ADDR32 against `.data'
   call print
 
-  ; encode words
+  ; MARK: encode words
   ; words_encoded shall be an array with each element = 8 bytes, storing one word
   ; ex: 00 00 00 00 00 07 04 03, 00 00 00 00 00 0B 08 08, ...
   xor r12d,r12d
@@ -187,13 +187,9 @@ _start:
   sub rdi, rbx
   shr rdi, 24
 
-  ; MARK: TODO: I left off here: use create_rdi_index to give an index to the encoded word
-  ; then, reformat the way we access the bitmaps so we can eliminate ps.
-  ; (we may have to clear the entire array and rebuild it each time we eliminate some ps)
-  ; then we need to store the length of it, and substitute the scoring from eliminating words_encoded to eliminating possible_secrets.
-  
+  call index_rdi
 
-  ; rdi = guess in standard form (MISSING INDEX)
+  ; rdi = guess in standard form (WITH index)
   ; r8 = colors in standard form
 
   mov rsi, rdi
@@ -203,87 +199,119 @@ _start:
 
   call make_bitmask
 
-  mov r9, [rel len_possible_secrets] ; counter
-  lea rbx, [rel possible_secrets] ; memory pointer
+
+  ; MARK: Eliminate PS
+  ; we clear the entire array and rebuild it each time we eliminate some ps
+  ; then we need to store the length of it
+
+  ; [unnecessary] fill PS temp space with 0s
+  ; lea rdi, [rel ps_temp_space]
+  ; xor rax, rax
+  ; mov rcx, 14855 ; qwords to clear
+  ; rep stosq
+
+  mov r9, [rel len_possible_secrets] ; counter (not used as index, since it counts down)
+  lea rbx, [rel cached_bitmaps]
+  lea rcx, [rel possible_secrets]
+  lea rdx, [rel ps_temp_space]
   xor r10d,r10d ; new len_ps
 
-  ; if we have a dynamic list of PS, how do we find the correct cached bitmap to use for the word?
-  ; currently, we are finding it by the index. however with a dynamic list, the words will have a variable index.
-  ; we can solve it by using a hashmap from word to bitmap (like we did in Rust)
-  ; or we could simply store the index in the highest 3 bytes of a register holding an encoded word (which is simpler)
-  ; since we are currently just having 00 00 00 there.
-  ; format: 00 00 1F = index 31
+  ; we will write the new array to ps_temp_space then copy it over to possible_secrets
   eliminate_based_on_info: ; UNFINISHED SECTION
-    ptest xmm0, [rbx]
+    mov rsi, [rcx] ; rsi = secret
+    mov r11, rsi
+    shr r11, 40
+    ; r11 = index stored in word
+    imul r11, r11, 48 ; r11 *= 48
+
+
+    ptest xmm0, [rbx+r11] ; get bitmap at address using the word index x 48
     jne .word_eliminated
-    ptest xmm1, [rbx+16]
+    ptest xmm1, [rbx+r11+16]
     jne .word_eliminated
-    ptest xmm2, [rbx+32]
-    je .word_not_eliminated
+    ptest xmm2, [rbx+r11+32]
+    jne .word_eliminated
 
     .word_not_eliminated:
     ; write to new list
+    mov [rdx], rsi 
+    add rdx, 8
     inc r10
 
     .word_eliminated:
     
     
-
-    add rbx, 48
+    add rcx, 8
     dec r9
     jne eliminate_based_on_info
 
   mov [rel len_possible_secrets], r10 ; write new length
+  ; copy temp ps into real ps
+  lea rsi, [rel ps_temp_space] ; src
+  lea rdi, [rel possible_secrets] ; dest
+  mov rcx, r10 ; count
+  cld ; clear direction flag (forward copy)
+  rep movsq
+
+  ; now we have filtered possible_secrets and set its new length!
 
   ; MARK: Solver
   ; for PG
   ; for PS
   xor r12d,r12d
   sub rsp, 32
-  mov [rsp], r12 ; [rsp] is counter for outermost loop
-  mov [rsp+16], r12 ; [rsp+16] is number of possible secrets remaining
+  mov [rsp], r12 ; [rsp] is counter for for_PG loop
+  mov qword [rsp+16], 0 ; [rsp+16] is free
 
   for_PG:
     lea rax, [rel words_encoded]
     mov r12, [rsp] ; temp r12
     mov rdi, [r12*8 + rax] ; pg (last 5 bytes, ignore first 3)
 
-    xor r10d,r10d ; temp r10
-    mov [rsp+8], r10; [rsp+8] is total_elim
-    xor r13d,r13d
+    xor r12d,r12d ; temp r12
+    mov [rsp+8], r12 ;[rsp+8] is free
+    
+    xor r13,r13 ; r13 is total_elim
+    ; MARK: TODO: I left off here: Using memory as a counter that is commonly used is inefficient! Something broke.
+    mov qword [rel for_ps_counter], 0 ; counter (goes from 0 -> 14854)
     for_PS:
-      lea rbx, [rel words_encoded]
-      mov rsi, [rbx + r13*8] ; ps
+      lea rbx, [rel possible_secrets]
+      mov rsi, [rel for_ps_counter] ; counter
+      mov rsi, [rbx + rsi*8] ; ps
       call get_colors ; r8 - colors in the form 00 00 00 01 02 00 02 01
   
       call make_bitmask
     
-      mov r9, 14855 ; counter
-      lea rbx, [rel cached_bitmaps] ; memory pointer
+      mov r9, [rel len_possible_secrets] ; counter
+      lea rbx, [rel cached_bitmaps] ; base
 
       for_another_PS:
+        dec r9
+        lea r14, [rel possible_secrets]
+        mov r14, [r14 + r9*8] ; r14 is another_ps
+        shr r14, 40 ; r14 is index of another ps
+        imul r14, r14, 48 ; r14 *= 48
+
         ; take bitmaps from memory [ the heap is SLOWWWWWWWW :( ]
-        ptest xmm0, [rbx] ; ptest only works on 16-byte aligned aligned xmmwords
+        ptest xmm0, [rbx + r14] ; ptest only works on 16-byte aligned aligned xmmwords
         jne .word_eliminated
 
-        ptest xmm1, [rbx+16]
+        ptest xmm1, [rbx + r14 + 16]
         jne .word_eliminated
 
-        ptest xmm2, [rbx+32]
+        ptest xmm2, [rbx + r14 + 32]
         je .word_not_eliminated
 
         .word_eliminated:
-        ; WOAH why are we using the stack, lets use a register, YIKES yikes yikes
-        inc qword [rsp+8] ; add to total_elim
+        inc r13 ; add to total_elim
         
         .word_not_eliminated:
 
-        add rbx, 48
-        dec r9
+        test r9,r9
         jne for_another_PS
       
-      inc r13
-      cmp r13, 14855
+      inc qword [rel for_ps_counter]
+      cmp qword [rel for_ps_counter], 14855
       jne for_PS
   
     ; write " words on average", 0xA
@@ -669,6 +697,8 @@ write_raw_bit:
   .finish:
   
 
+
+; [DEPRECATED] uses too many registers and likely doesn't function. use write_raw_bit_sequence_revised.
 ; write a sequence of bits into the xmm0-xmm2 bitmap
 ; rbx: index of leftmost bit (0-285)
 ; rcx: index of rightmost bit (0-285)
@@ -917,9 +947,10 @@ bigpinsrq:
     ret
 
 ; rdi - word (without 3-byte index)
+; slow; iterates through dictionary to match word
 ; modifies: r13, rsi, rdi, rbx
-; Return: gives rdi an index
-create_rdi_index:
+; Return: gives rdi an index (00 00 1F = index 31)
+index_rdi:
   xor r13d, r13d
   .loop:
 
@@ -935,7 +966,8 @@ create_rdi_index:
   cmp r13, 14855
   jne .loop
 
-  .done
+  .done:
+  ret
 
 jmp_table:
   dq gray
@@ -974,8 +1006,12 @@ section .bss
   alignb 16
   possible_secrets resb 118840 ; dictionary, but is changed as we eliminate words
   len_possible_secrets resq 1
+  for_ps_counter resq 1 ; i want this near possible_secrets and cached_bitmaps so we get more cache hits
 
   ; each bitmap needs to store 26*11 bits via 3 XMM registers. (16*3 = 48 bytes)
   ; there are 14855 bitmaps. 14855*48 = 713040
   alignb 16 ; yay! this works. now ptest doesnt give an exception.
   cached_bitmaps: resb 713040
+
+  alignb 16
+  ps_temp_space resb 118840 ; temp space
