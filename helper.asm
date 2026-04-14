@@ -327,11 +327,56 @@ yikes:
   pop rsi
   ret
 
+; writes a base 10 number as a (formatted ASCII string) into memory from a number
+; rdi - number (unsigned qword)
+; preserves: everything
+; Return: 
+; rax - length of string (excluding newline)
+; rbx - memory location of string
+write_fnumber:
+  mov [temp_qword], rdi
+  STR_REGS
+  mov rdi, [temp_qword]
+
+  mov rcx, 10 ; divisor for div ecx
+  mov rbp, number_buffer
+  log_int_loop:
+    mov eax, edi
+    mov rdx, rdi
+    shr rdx, 32
+
+    ; edx = higher 32 bits of dividend
+    ; eax = lower 32 bits of dividend
+    div rcx ; divisor
+
+    ; rax is 64-bit quotient
+    ; rdx is 64-bit remainder
+    dec rbp
+    add rdx, "0" ; add the ascii value for "0" (0x30)
+    mov [rbp], dl
+    ; push remainder (last digit) and replace old value with quotient
+    cmp eax, 0
+    jne log_int_loop
+  
+  mov rbx, rbp
+  mov [temp_qword], rax
+  mov [temp_qword_2], rbx
+  LD_REGS
+  mov rax, [temp_qword]
+  mov rbx, [temp_qword_2]
+  ret
+
 section .bss
   ; bss data - 256 bytes for user input
   input_buffer resb 256
   input_buffer_len equ $ - input_buffer
   win64_input_num_bytes_read_output resq 1 ; windows ReadFile output
+
+  resb 256
+  number_buffer:
+
+  temp_qword resq 1 ; use locally in subroutines where you want to pass data through STR_REGS or LD_REGS
+  temp_qword_2 resq 1
 section .data
-  yikes_msg db "yikes"
+  yikes_msg db "yikes", 0xA
   yikes_len equ $ - yikes_msg
