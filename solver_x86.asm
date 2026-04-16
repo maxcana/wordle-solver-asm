@@ -244,18 +244,31 @@ _start:
     dec r9
     jne eliminate_based_on_info
 
-  ; print "Eliminated [] words"
+  ; print "Filtered possible secrets: [] -> [] (-[])\n"
+  ; use helper.asm/write_fnumber
   mov rsi, filter_1
   mov rdi, filter_1_len
   call print
-  ; use helper.asm/write_fnumber
   mov rdi, [rel len_possible_secrets]
-  sub rdi, r10
   call write_fnumber
   call print
   mov rsi, filter_2
   mov rdi, filter_2_len
   call print
+  mov rdi, r10
+  call write_fnumber
+  call print
+  mov rsi, filter_3
+  mov rdi, filter_3_len
+  call print
+  mov rdi, [rel len_possible_secrets]
+  sub rdi, r10
+  call write_fnumber
+  call print
+  mov rsi, filter_4
+  mov rdi, filter_4_len
+  call print
+  
 
   mov [rel len_possible_secrets], r10 ; write new length
   ; copy temp ps into real ps
@@ -1010,13 +1023,17 @@ section .data
   press_enter db "Press enter to continue...", 0xA
   press_enter_len equ $ - press_enter
 
-  filter_1 db "Eliminated " 
+  filter_1 db "Filtered possible secrets: " 
   filter_1_len equ $ - filter_1
-  filter_2 db " words", 0xA
+  filter_2 db " -> "
   filter_2_len equ $ - filter_2
+  filter_3 db " (-"
+  filter_3_len equ $ - filter_3
+  filter_4 db ")", 0xA
+  filter_4_len equ $ - filter_4
   ; by the way, we do printing formatted strings 2 ways.
   ; - pushing the entire composite string onto the stack and printing with that set as address (like we do for log_str1-3)
-  ; - printing in segments, like printing "Eliminated ", then printing a number from the stack, then printing "words", 0xA (we do this for filter_1-2)
+  ; - printing in segments, like printing "Eliminated ", then printing a number from the stack, then printing "words", 0xA
   ; (i could make a printf subroutine later if i feel like it)
 section .bss
   ; each word is 8 bytes (left 3 are 0, right 5 are u8 letters)
