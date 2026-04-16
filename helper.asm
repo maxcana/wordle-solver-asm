@@ -2,24 +2,31 @@
 default rel
 section .text
 ; exports
+  ; functions
     global safe_print_bitmap
     global safe_print_word
     global print
+    global print_newline
     global input
     global yikes
     global win64_exit
     global linux_exit
+    global write_fnumber
+
+  ; bss
     global input_buffer ; bss data - output of input subroutine
+    
 
 ; windows api stuff
-    extern GetStdHandle
-    extern WriteFile
-    extern ExitProcess
-    extern ReadFile
+  extern GetStdHandle
+  extern WriteFile
+  extern ExitProcess
+  extern ReadFile
 
 
 ; macros
-; note: storing this much might be mega slow, so don't print too often
+; note: storing this much might be mega slow, so don't print too oftenz
+; like pushaq if it existed, but also pushes xmm0-2 registers
 %macro STR_REGS 0
   push rax
   push rbx
@@ -187,6 +194,16 @@ print_word:
   call print
   add rsp, 16
 
+; just calls print, passing in newline
+; preserves: everything
+print_newline:
+  STR_REGS
+  mov rsi, newline_msg
+  mov rdi, newline_len
+  call print
+  LD_REGS
+  ret
+
 ; wrapper print function
 ; rsi - Pointer to the string to print
 ; rdi - Length of the string
@@ -331,8 +348,8 @@ yikes:
 ; rdi - number (unsigned qword)
 ; preserves: everything
 ; Return: 
-; rax - length of string (excluding newline)
-; rbx - memory location of string
+; rdi - length of string (excluding newline)
+; rsi - memory location of string
 write_fnumber:
   mov [temp_qword], rdi
   STR_REGS
@@ -340,30 +357,37 @@ write_fnumber:
 
   mov rcx, 10 ; divisor for div ecx
   mov rbp, number_buffer
-  log_int_loop:
-    mov eax, edi
-    mov rdx, rdi
-    shr rdx, 32
+  add rbp, 256
+  xor r8,r8
 
+  mov eax, edi
+  mov rdx, rdi
+  shr rdx, 32
+  log_int_loop:
     ; edx = higher 32 bits of dividend
     ; eax = lower 32 bits of dividend
-    div rcx ; divisor
+    div ecx ; divisor
 
     ; rax is 64-bit quotient
     ; rdx is 64-bit remainder
     dec rbp
     add rdx, "0" ; add the ascii value for "0" (0x30)
-    mov [rbp], dl
-    ; push remainder (last digit) and replace old value with quotient
+    mov [rbp], dl ; push remainder (last digit) and replace old value with quotient
+
+    inc r8 ; increase length of string
+    
+    ; set up for next iteration
+    mov rdx, rax
+    shr rdx, 32
+
     cmp eax, 0
     jne log_int_loop
-  
-  mov rbx, rbp
-  mov [temp_qword], rax
-  mov [temp_qword_2], rbx
+
+  mov [temp_qword], r8
+  mov [temp_qword_2], rbp
   LD_REGS
-  mov rax, [temp_qword]
-  mov rbx, [temp_qword_2]
+  mov rdi, [temp_qword]
+  mov rsi, [temp_qword_2]
   ret
 
 section .bss
@@ -372,11 +396,14 @@ section .bss
   input_buffer_len equ $ - input_buffer
   win64_input_num_bytes_read_output resq 1 ; windows ReadFile output
 
-  resb 256
-  number_buffer:
+  number_buffer resb 256
 
-  temp_qword resq 1 ; use locally in subroutines where you want to pass data through STR_REGS or LD_REGS
+  ; use temp storage locally in subroutines where you want to pass data through STR_REGS or LD_REGS
+  temp_qword resq 1 
   temp_qword_2 resq 1
 section .data
   yikes_msg db "yikes", 0xA
   yikes_len equ $ - yikes_msg
+
+  newline_msg db 0xA
+  newline_len equ $ - newline_msg

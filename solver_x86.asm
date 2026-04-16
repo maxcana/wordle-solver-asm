@@ -13,6 +13,7 @@ section .text
   extern safe_print_word
   extern print_word
   extern print
+  extern print_newline
   extern input
   extern yikes
   extern win64_exit
@@ -192,10 +193,10 @@ _start:
   ; rdi = guess in standard form (WITH index)
   ; r8 = colors in standard form
 
-  mov rsi, rdi
-  call safe_print_word
-  mov rsi, r8
-  call safe_print_word
+  ; mov rsi, rdi
+  ; call safe_print_word
+  ; mov rsi, r8
+  ; call safe_print_word
 
   call make_bitmask
   
@@ -243,10 +244,18 @@ _start:
     dec r9
     jne eliminate_based_on_info
 
+  ; print "Eliminated [] words"
   mov rsi, filter_1
   mov rdi, filter_1_len
   call print
-  ; MARK: TODO: I left off here: Writing # eliminated words, using helper.asm/write_fnumber
+  ; use helper.asm/write_fnumber
+  mov rdi, [rel len_possible_secrets]
+  sub rdi, r10
+  call write_fnumber
+  call print
+  mov rsi, filter_2
+  mov rdi, filter_2_len
+  call print
 
   mov [rel len_possible_secrets], r10 ; write new length
   ; copy temp ps into real ps
@@ -342,8 +351,8 @@ _start:
       ; edx is remainder
       dec rsp
       add rdx, "0" ; add the ascii value for "0" (0x30)
-      mov [rsp], dl
-      ; push remainder (last digit) and replace old value with quotient
+      mov [rsp], dl ; push remainder (last digit) and replace old value with quotient
+      
       cmp eax, 0
       jne log_int_loop
 
