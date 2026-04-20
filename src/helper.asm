@@ -1,4 +1,5 @@
-; printing and debugging utility wrappers
+; printing, input handling, debugging utility
+; wrappers for linux and windows ABIs
 default rel
 section .text
 ; exports
@@ -9,8 +10,7 @@ section .text
     global print_newline
     global input
     global yikes
-    global win64_exit
-    global linux_exit
+    global exit
     global write_fnumber
 
   ; bss
@@ -18,15 +18,27 @@ section .text
     
 
 ; windows api stuff
+%ifdef WINDOWS
   extern GetStdHandle
   extern WriteFile
   extern ExitProcess
   extern ReadFile
+%endif
 
+; MARK: Macros
 
-; macros
+; args: windows_fn, linux_fn
+; this decides at assemble time to substitute with the correct platform-specific function
+%macro PLATFORM_CALL 2
+    %ifdef WINDOWS
+        call %1
+    %else
+        call %2
+    %endif
+%endmacro
+
 ; note: storing this much might be mega slow, so don't print too oftenz
-; like pushaq if it existed, but also pushes xmm0-2 registers
+; its like pushaq if it existed, but also pushes xmm0-2 registers
 %macro STR_REGS 0
   push rax
   push rbx
@@ -75,6 +87,8 @@ section .text
   pop rbx
   pop rax
 %endmacro
+
+; MARK: Bitmaps & words
 safe_print_bitmap:
   STR_REGS
   call print_bitmap
@@ -123,7 +137,7 @@ print_bitmap:
   call .append_bits
 
   mov rsi, rbp
-  mov rdi, 397 ; print 384 characters + 12 line feeds + 1 null terminator
+  mov rdi, 397 ; print 384 characters + 12 line feeds + 1 more line feed at end
 
   call print
 
@@ -204,6 +218,8 @@ print_newline:
   LD_REGS
   ret
 
+; MARK: Wrappers
+
 ; wrapper print function
 ; rsi - Pointer to the string to print
 ; rdi - Length of the string
@@ -211,7 +227,7 @@ print_newline:
 ; Return: None
 print:
   STR_REGS
-  call win64_print
+  PLATFORM_CALL win64_print, linux_print
   LD_REGS
   ret
 
@@ -225,11 +241,16 @@ input:
   mov rcx, 256 ; # bytes to clear
   rep stosb
 
-  call win64_input
+  PLATFORM_CALL win64_input, linux_input
 
   ; we do need to output rax
   ret
+exit:
+  PLATFORM_CALL win64_exit, linux_exit
 
+; MARK: ABI-specific
+
+%ifdef LINUX
 ; rsi - Pointer to the string to print
 ; rdi - Length of the string
 ; Return: None
@@ -273,8 +294,9 @@ linux_input:
   mov byte [rbx + rax], 0
   
   ret
+%endif
 
-
+%ifdef WINDOWS
 ; rsi - Pointer to the string to print
 ; rdi - Length of the string
 ; modifies: caller-saved registers, rcx, rdx, rax, r8, r9
@@ -299,6 +321,7 @@ win64_print:
 
   add rsp, 48
   ret
+
 
 win64_exit:
   ; ExitProcess(0)
@@ -331,6 +354,10 @@ win64_input:
 
   add rsp, 48
   ret
+
+%endif
+
+; MARK: Random utility
 
 ; call when something goes wrong
 ; preserves: everything
