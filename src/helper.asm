@@ -12,9 +12,11 @@ section .text
     global yikes
     global exit
     global write_fnumber
+    global sort_array
 
   ; bss
     global input_buffer ; bss data - output of input subroutine
+    global sort_output
     
 
 ; windows api stuff
@@ -417,6 +419,140 @@ write_fnumber:
   mov rsi, [temp_qword_2]
   ret
 
+; MARK: Radix sorter
+
+; radix sorter
+; outputs: array of words length rdi located at [sort_output]: indexes corresponding to values on the original array (from highest to lowest)
+; rsi - pointer to array of qwords
+; rdi - length of array (maximum 14855)
+; preserves: everything
+; [(most of this) FUNCTION IS NOT WRITTEN BY ME]
+sort_array:
+  mov [rel temp_qword], rsi
+  mov [rel temp_qword_2], rdi
+  STR_REGS
+  ; r12 = input array ptr, r13 = length
+  mov r12, [rel temp_qword]
+  mov r13, [rel temp_qword_2]
+  lea r9, [rel sort_output] ; r9 permanently set to sort_output (for this function)
+
+  ; init sort_output with identity [0, 1, ..., n-1] as words
+  lea rdi, [rel sort_output]
+  xor ecx, ecx
+  .init_loop:
+      cmp ecx, r13d
+      jge .init_done
+      mov [rdi + rcx*2], cx
+      inc ecx
+      jmp .init_loop
+  .init_done:
+      ; 8 passes, LSB first
+      ; src always = sort_output (we scatter into stack buf, copy back)
+      ; this avoids needing a second resw buffer
+      xor r14, r14 ; pass index
+
+  .pass_loop:
+      cmp r14, 8
+      jge .pass_done
+
+      mov rcx, r14
+      shl rcx, 3 ; shift = pass * 8
+
+      ; count[256] on stack, zero it
+      sub rsp, 256*8
+      mov rdi, rsp
+      xor eax, eax
+      mov r15, 256
+  .zero_loop:
+      mov [rdi + r15*8 - 8], rax
+      dec r15
+      jnz .zero_loop
+
+      ; --- count ---
+      xor r15, r15
+  .count_loop:
+      cmp r15, r13
+      jge .count_done
+      movzx rdx, word [r9 + r15*2]   ; index (word)
+      mov rdx, [r12 + rdx*8]                      ; value
+      mov rbx, rdx
+      shr rbx, cl                                  ; cl = shift
+      and rbx, 0xFF
+      inc qword [rsp + rbx*8]
+      inc r15
+      jmp .count_loop
+  .count_done:
+
+      ; --- exclusive prefix sum ---
+      xor r15, r15
+      xor rbp, rbp
+  .scan_loop:
+      cmp r15, 256
+      jge .scan_done
+      mov rdx, [rsp + r15*8]
+      mov [rsp + r15*8], rbp
+      add rbp, rdx
+      inc r15
+      jmp .scan_loop
+  .scan_done:
+      ; scatter into temp_buf on stack (above count[])
+      ; we need n words of scratch. allocate on stack
+      ; n <= 14855, so 14855*2 = 29710 bytes, round to 29712
+      sub rsp, 29712
+      ; layout: rsp+0 = word scratch buf, rsp+29712 = count[256] qwords
+      xor r15, r15
+  .scatter_loop:
+      cmp r15, r13
+      jge .scatter_done
+      
+      movzx rdx, word [r9 + r15*2] ; index
+      mov rax, [r12 + rdx*8] ; value
+      mov rbx, rax
+      shr rbx, cl
+      and rbx, 0xFF
+      mov rdi, [rsp + 29712 + rbx*8] ; position
+      inc qword [rsp + 29712 + rbx*8]
+      mov [rsp + rdi*2], dx ; store index word
+      inc r15
+      jmp .scatter_loop
+  .scatter_done:
+      ; copy scratch back to sort_output
+      lea rdi, [rel sort_output]
+      xor r15, r15
+  .copy_loop:
+      cmp r15, r13
+      jge .copy_done
+      movzx rax, word [rsp + r15*2]
+      mov [rdi + r15*2], ax
+      inc r15
+      jmp .copy_loop
+  .copy_done:
+
+      add rsp, 29712
+      add rsp, 256*8
+
+      inc r14
+      jmp .pass_loop
+
+  .pass_done:
+      ; reverse sort_output in-place (ascending -> descending)
+      xor r14, r14
+      mov r15, r13
+      dec r15
+  .reverse_loop:
+      cmp r14, r15
+      jge .reverse_done
+      movzx rax, word [r9 + r14*2]
+      movzx rbx, word [r9 + r15*2]
+      mov [r9 + r14*2], bx
+      mov [r9 + r15*2], ax
+      inc r14
+      dec r15
+      jmp .reverse_loop
+  .reverse_done:
+      LD_REGS
+      ret
+
 section .bss
   ; bss data - 256 bytes for user input
   input_buffer resb 256
@@ -428,6 +564,8 @@ section .bss
   ; use temp storage locally in subroutines where you want to pass data through STR_REGS or LD_REGS
   temp_qword resq 1 
   temp_qword_2 resq 1
+
+  sort_output resw 14855
 section .data
   yikes_msg db "yikes", 0xA
   yikes_len equ $ - yikes_msg

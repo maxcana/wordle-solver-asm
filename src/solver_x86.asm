@@ -17,8 +17,13 @@ section .text
   extern input
   extern yikes
   extern exit
-  extern input_buffer ; bss data label - probably just a memory address, like all the other extern labels. all hail the linker
   extern write_fnumber
+  extern sort_array
+
+  ; bss
+  extern input_buffer ; bss data label - probably just a memory address, like all the other extern labels. all hail the linker
+  extern sort_output
+
 ; dict.asm
   extern words
 
@@ -394,7 +399,7 @@ _start:
       test rcx,rcx
       jne log_guess_loop
     
-    ; write "guess "
+    ; write "Guess "
     mov rcx, 6
     log_1_loop:
       dec rcx
@@ -418,11 +423,36 @@ _start:
 
     mov rsp, r15 ; revive old rsp
 
+    ; add to guess_scores
+    mov r15, [rsp] ; counter
+    lea r15, [r15 * 8]
+    add r15, guess_scores
+    mov [r15], r13 ; r13 is total_elim
+
     inc qword [rsp]
     cmp qword [rsp], 14855
     jne for_PG
   
-  ; end of main loop
+  ; end of for_PG
+  ; we have guess_scores and words_encoded.
+  ; now we need sort the scores, by making a new array of indexes ordered by highest score first
+  lea rsi, [rel guess_scores]
+  mov rdi, 14855
+  call sort_array
+
+  mov r9, 5 ; print_top_x
+  print_top:
+  dec r9
+  lea r10, [rel sort_output]
+  lea r10, [r10 + r9 * 4] ; word
+  ; MARK: I left off here
+
+
+  test r9,r9
+  jne print_top
+  
+  
+
   mov rsi, press_enter
   mov rdi, press_enter_len
   call print
@@ -1040,6 +1070,7 @@ section .bss
   ; each word is 8 bytes (left 3 are index, right 5 are u8 letters)
   ; 14855 words * 8 = 118840 bytes
   words_encoded resb 118840 ; dictionary
+  guess_scores resq 14855
 
   alignb 16
   possible_secrets resb 118840 ; dictionary, but is changed as we eliminate words
