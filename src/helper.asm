@@ -419,10 +419,23 @@ write_fnumber:
   mov rsi, [temp_qword_2]
   ret
 
+; rsi - divisor u64 (top)
+; rdi - dividend u64 (bottom)
+; Return:
+; rdi - length of string (excluding newline)
+; rsi - memory location of string
+write_fdouble:
+  cvtsi2sd xmm4, rsi
+  cvtsi2sd xmm5, rdi
+  divsd xmm4, xmm5 ; xmm4 = result
+  ; we are NOT using the C library printf
+  ; MARK: TODO: I left off here
+
+
 ; MARK: Radix sorter
 
 ; radix sorter
-; outputs: array of words length rdi located at [sort_output]: indexes corresponding to values on the original array (from highest to lowest)
+; outputs: array of words length rdi located at [sort_output]: indexes corresponding to values on the original array (from unsigned highest to lowest)
 ; rsi - pointer to array of qwords
 ; rdi - length of array (maximum 14855)
 ; preserves: everything

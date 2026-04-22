@@ -304,7 +304,7 @@ _start:
     mov [rsp+8], r12 ;[rsp+8] is free
     
     xor r13,r13 ; r13 is total_elim
-    ; MARK: TODO: I left off here: Using memory as a counter that is commonly used is inefficient! Something broke.
+    ; TODO: Using memory as a counter that is commonly used is inefficient!
     mov qword [rel for_ps_counter], 0 ; counter (goes from 0 -> 14854)
     for_PS:
       lea rbx, [rel possible_secrets]
@@ -440,15 +440,47 @@ _start:
   mov rdi, 14855
   call sort_array
 
-  mov r9, 5 ; print_top_x
+  mov r9, 0
   print_top:
   dec r9
   lea r10, [rel sort_output]
-  lea r10, [r10 + r9 * 4] ; word
-  ; MARK: I left off here
+  lea r10, [r10 + r9 * 2] ; word (2 bytes)
+  movzx r10w, [r10] ; r10 = index of guess
+  
+  lea r11, [rel guess_scores]
+  lea r11, [r11 + r10*8]
+  mov r11, [r11] ; r11 = total_elim
+
+  lea r12, [rel words_encoded]
+  lea r12, [r12 + r10*8]
+  mov r12, [r12] ; r12 = pg
+
+  inc r9
+
+  mov rsi, scoring_1
+  mov rdi, scoring_1_len
+  call print
+  mov rdi, r9
+  call write_fnumber
+  call print
+  mov rsi, scoring_2
+  mov rdi, scoring_2_len
+  call print
+  mov rsi, r12
+  call safe_print_word
+  mov rsi, scoring_3
+  mov rdi, scoring_3_len
+  call print
+  mov rdi, r11
+  call write_fnumber
+  call print
+  mov rsi, scoring_4
+  mov rdi, scoring_4_len
+  call print
 
 
-  test r9,r9
+
+  cmp r9,5 ; print_top_x
   jne print_top
   
   
@@ -464,6 +496,8 @@ _start:
   ; Set up arguments for exit function
   xor rdi, rdi
   call exit
+
+; MARK: make_bitmask
 
 ; rdi - guess in the form 00 00 00 00 00 07 04 03
 ; r8 - colors in the form 00 00 00 02 00 00 00 00
@@ -614,6 +648,7 @@ make_bitmask:
   ; bitmask finished!
   ret
 
+; MARK: Helpers
 ; rdi - guess in the form 00 00 00 00 00 07 04 03
 ; rsi - secret in the form 00 00 00 00 02 18 0B 12
 ; Return: r8 - colors in the form 00 00 00 02 00 00 00 00
@@ -1063,9 +1098,18 @@ section .data
   filter_4 db ")", 0xA
   filter_4_len equ $ - filter_4
   ; by the way, we do printing formatted strings 2 ways.
-  ; - pushing the entire composite string onto the stack and printing with that set as address (like we do for log_str1-3)
+  ; - pushing the entire composite string onto the stack and printing with that set as address (like we do for log_str1-3) (this method is worse since i have to change code every time i change length of string)
   ; - printing in segments, like printing "Eliminated ", then printing a number from the stack, then printing "words", 0xA
   ; (i could make a printf subroutine later if i feel like it)
+
+  scoring_1 db "#"
+  scoring_1_len equ $ - scoring_1 
+  scoring_2 db " Guess "
+  scoring_2_len equ $ - scoring_2
+  scoring_3 db " eliminates "
+  scoring_3_len equ $ - scoring_3
+  scoring_4 db " words on average", 0xA
+  scoring_4_len equ $ - scoring_4
 section .bss
   ; each word is 8 bytes (left 3 are index, right 5 are u8 letters)
   ; 14855 words * 8 = 118840 bytes
