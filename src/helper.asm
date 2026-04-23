@@ -26,6 +26,8 @@ section .text
   extern WriteFile
   extern ExitProcess
   extern ReadFile
+  extern CreateFileA
+  extern CloseHandle
 %endif
 
 ; MARK: Macros
@@ -251,6 +253,17 @@ input:
 exit:
   PLATFORM_CALL win64_exit, linux_exit
 
+; read the config file and put its contents into memory at [config_buffer]
+; preserves: everything
+; Return: rdi - bytes read (length of contents)
+read_config:
+  STR_REGS
+  PLATFORM_CALL win64_read_config, linux_read_config
+  mov [temp_qword], rdi
+  LD_REGS
+  mov rdi, [temp_qword]
+  ret
+
 ; MARK: ABI-specific
 
 %ifdef LINUX
@@ -297,7 +310,41 @@ linux_input:
   mov byte [rbx + rax], 0
   
   ret
+
+; read the config file and put its contents into memory at [config_buffer]
+; modifies: caller-saved registers + more
+; Return: rdi - bytes read (length of contents)
+linux_read_config:
+  ; get the file descriptor
+  mov rax, 2 ; sys_open
+  lea rdi, [rel config_filename] ; path
+  mov rsi, 0 ; O_RDONLY
+  mov rdx, 0 ; mode
+  syscall
+
+  test rax, rax
+  js .error ; negative fd = error
+  mov r14, rax ; r14 = file descriptor
+
+  ; read into buffer
+  mov rax, 0 ; sys_read
+  mov rdi, r14 ; file descriptor
+  mov rsi, config_buffer ; address of buffer to store config file
+  mov rdx, config_buffer_len
+  syscall
+  ; rax = bytes read
+  mov r15, rax ; move into callee-saved (safe) register
+
+  ; close the file (free the descriptor, that's cool i didnt know thats how it worked!)
+  mov rax, 3 ; sys_close
+  mov rdi, r14
+  syscall
+
+  mov rdi, r15
+  ret
+
 %endif
+
 
 %ifdef WINDOWS
 ; rsi - Pointer to the string to print
@@ -357,6 +404,53 @@ win64_input:
 
   add rsp, 48
   ret
+
+; read the config file and put its contents into memory at [config_buffer]
+; modifies: caller-saved registers + more
+; Return: rdi - bytes read (length of contents)
+win64_read_config:
+  sub rsp, 40 ; [ ... 24 local (we push later) ... 8 unused, for alignment ... 32 shadow]
+
+  ; CreateFileA(LPCSTR lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile)
+  lea rcx, [rel config_filename] ; #1 lpFileName
+  mov rdx, 0x80000000 ; #2 GENERIC_READ
+  mov r8, 0 ; #3 no sharing
+  mov r9, 0 ; #4 NULL
+  push 0 ; #7 NULL
+  push 0x80 ; #6 FILE_ATTRIBUTE_NORMAL
+  push 3 ; #5 OPEN_EXISTING
+  call CreateFileA
+  add rsp, 64 ; reset rsp
+
+  cmp rax, -1 ; INVALID_HANDLE_VALUE
+  jne .no_error
+    call yikes
+    ret
+  .no_error:
+
+  mov r14, rax ; rax = config handle
+
+  ; ReadFile(handle, buffer, len, &bytes_read, lpOverlapped)
+  sub rsp, 32 ; [... 32 shadow space]
+
+  mov rcx, r14
+  lea rdx, [rel config_buffer]
+  mov r8, config_buffer_len
+  lea r14, [rel win64_input_num_bytes_read_output]
+  push 0 ; lpOverlapped (NULL)
+  call ReadFile
+  mov qword r15, [rel win64_input_num_bytes_read_output]
+  add rsp, 40 ; reset rsp
+
+  ; CloseHandle(handle)
+  mov rcx, r14 ; r14 = handle
+  sub rsp, 32
+  call CloseHandle
+  add rsp, 32
+
+  mov rdi, r15 ; r15 = num bytes read
+  ret
+
 
 %endif
 
@@ -420,7 +514,7 @@ write_fnumber:
   mov rsi, [temp_qword_2]
   ret
 
-; writes the result of the division with 2 digits after decimal of precision (floored)
+; writes the result of the division with 3 digits after decimal of precision (floored)
 ; rsi - divisor i64 (top)
 ; rdi - dividend i64 (bottom)
 ; Return:
@@ -638,9 +732,14 @@ section .bss
   temp_qword_2 resq 1
 
   sort_output resw 14855
+
+  config_buffer resb 1024
+  config_buffer_len equ $ - config_buffer
 section .data
   yikes_msg db "yikes", 0xA
   yikes_len equ $ - yikes_msg
 
   newline_msg db 0xA
   newline_len equ $ - newline_msg
+
+  config_filename db "config.ini", 0
