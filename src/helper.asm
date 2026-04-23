@@ -12,6 +12,7 @@ section .text
     global yikes
     global exit
     global write_fnumber
+    global write_fdouble
     global sort_array
 
   ; bss
@@ -374,11 +375,11 @@ yikes:
   ret
 
 ; writes a base 10 number as a (formatted ASCII string) into memory from a number
-; rdi - number (unsigned qword)
-; preserves: everything
+; rdi - number (u64)
 ; Return: 
 ; rdi - length of string (excluding newline)
 ; rsi - memory location of string
+; preserves: everything
 write_fnumber:
   mov [temp_qword], rdi
   STR_REGS
@@ -419,17 +420,74 @@ write_fnumber:
   mov rsi, [temp_qword_2]
   ret
 
-; rsi - divisor u64 (top)
-; rdi - dividend u64 (bottom)
+; writes the result of the division with 2 digits after decimal of precision (floored)
+; rsi - divisor i64 (top)
+; rdi - dividend i64 (bottom)
 ; Return:
 ; rdi - length of string (excluding newline)
 ; rsi - memory location of string
+; modifies: xmm4-6 only
 write_fdouble:
+  mov [rel temp_qword], rsi
+  mov [rel temp_qword_2], rdi
+  STR_REGS
+  mov rsi, [rel temp_qword]
+  mov rdi, [rel temp_qword_2]
+
+  ; note: high 64 bits of xmm register is unused for double (f64)
   cvtsi2sd xmm4, rsi
   cvtsi2sd xmm5, rdi
-  divsd xmm4, xmm5 ; xmm4 = result
-  ; we are NOT using the C library printf
-  ; MARK: TODO: I left off here
+  divsd xmm4, xmm5 ; xmm4 = xmm4/xmm5
+  ; we are NOT using the C library printf (anything but the C library)
+
+  ; example: xmm4 = 48923560.454389
+  cvttsd2si rax, xmm4 ; rax = 48923560
+  cvtsi2sd xmm5, rax ; xmm5 = 48923560
+  subsd xmm4, xmm5 ; xmm4 = 0.454389
+  
+  mov r9, 1000 ; temp r9 (10^3 = 3 digits after decimal)
+  cvtsi2sd xmm6, rax
+  mulsd xmm4, xmm6 ; xmm4 = 454.3
+  cvttsd2si rbx, xmm4 ; rbx = 454
+
+  ; now to write the string into the buffer
+  mov rdi, rax
+  call write_fnumber
+
+  ; copy to stack
+  ; rsi = src, rdi = dest, rcx = count
+  mov rcx, rdi ; count
+  lea rdi, [rel double_buffer] ; dest
+  cld
+  rep movsq
+  add rdi, rcx
+
+  ; write the period
+  mov byte [rdi], '.'
+  inc rdi
+  mov rbp, rdi
+
+  mov rdi, rbx
+  call write_fnumber
+
+  ; copy to stack again
+  mov rcx, rdi ; count
+  mov rdi, rbp ; dest
+  cld
+  rep movsq
+  add rbp, rcx
+
+  ; outputs
+  mov rdi, rbp
+  lea rax, [rel double_buffer]
+  sub rdi, rax ; rdi = length
+
+  mov [rel temp_qword], rdi
+  LD_REGS
+  lea rsi, [rel double_buffer]
+  mov rdi, [rel temp_qword]
+  ret
+  
 
 
 ; MARK: Radix sorter
@@ -486,10 +544,10 @@ sort_array:
   .count_loop:
       cmp r15, r13
       jge .count_done
-      movzx rdx, word [r9 + r15*2]   ; index (word)
-      mov rdx, [r12 + rdx*8]                      ; value
+      movzx rdx, word [r9 + r15*2] ; index (word)
+      mov rdx, [r12 + rdx*8] ; value
       mov rbx, rdx
-      shr rbx, cl                                  ; cl = shift
+      shr rbx, cl ; cl = shift
       and rbx, 0xFF
       inc qword [rsp + rbx*8]
       inc r15
@@ -572,7 +630,8 @@ section .bss
   input_buffer_len equ $ - input_buffer
   win64_input_num_bytes_read_output resq 1 ; windows ReadFile output
 
-  number_buffer resb 256
+  number_buffer resb 256 ; store formatted string (for u64) for write_fnumber
+  double_buffer resb 256 ; store formatted string (for double) for write_fdouble
 
   ; use temp storage locally in subroutines where you want to pass data through STR_REGS or LD_REGS
   temp_qword resq 1 

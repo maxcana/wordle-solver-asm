@@ -18,6 +18,7 @@ section .text
   extern yikes
   extern exit
   extern write_fnumber
+  extern write_fdouble
   extern sort_array
 
   ; bss
@@ -426,7 +427,8 @@ _start:
     ; add to guess_scores
     mov r15, [rsp] ; counter
     lea r15, [r15 * 8]
-    add r15, guess_scores
+    lea r14, [rel guess_scores]
+    add r15, r14
     mov [r15], r13 ; r13 is total_elim
 
     inc qword [rsp]
@@ -471,13 +473,13 @@ _start:
   mov rsi, scoring_3
   mov rdi, scoring_3_len
   call print
-  mov rdi, r11
-  call write_fnumber
+  mov rsi, r11
+  mov rdi, 14855
+  call write_fdouble
   call print
   mov rsi, scoring_4
   mov rdi, scoring_4_len
   call print
-
 
 
   cmp r9,5 ; print_top_x

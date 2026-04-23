@@ -901,3 +901,18 @@ now i get
 10001000000000000111000000
 10001000000000000111000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+
+***
+
+context:
+  Linking...
+  compile\win64\helper.obj:C:\user\dev\assemb:(.text+0x4f3): relocation truncated to fit: IMAGE_REL_AMD64_ADDR32 against `.bss'
+  compile\win64\solver_x86.obj:C:\user\dev\assemb:(.text+0x429): relocation truncated to fit: IMAGE_REL_AMD64_ADDR32 against `.bss'
+  collect2.exe: error: ld returned 1 exit status
+
+about labels:
+basically the address is always the same obviously, but remember its 64-bit. so unless you use lea [rel x], you have to treat it as an imm64.
+so
+- you cant use it with add, since add only takes imm32.
+- you cant use it with [x], since square brackets only take imm32.
+- you can use it with mov a, x (imm64).
