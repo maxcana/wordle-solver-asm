@@ -718,6 +718,47 @@ sort_array:
       LD_REGS
       ret
 
+; parse arqw file (u64 numbers separated by lines)
+; rsi - memory address of arqw string
+; rdi - length of arqw string
+; preserves: everything
+parse_arqw:
+  mov [rel temp_qword], rsi
+  mov [rel temp_qword_2], rdi
+  STR_REGS
+  mov rax, [rel temp_qword] ; rax = address of first character
+  mov rbx, [rel temp_qword_2]
+  add rbx, rax ; rbx = address right after last character
+
+  mov r10, rax ; start of current line
+  mov r9, rax ; index
+  .for_each_line:
+  inc r9
+  cmp [r9], 0xA
+  jne .for_each_line
+  ; if [r9] =  0xA, line is from from [r10, r9)
+  call .deal_with_line
+
+  ; if r9 = rbx, last line is from [r10, r9)
+  cmp r9, rbx
+  jne .for_each_line
+  call .deal_with_line
+
+  LD_REGS
+  ret
+  
+
+; line left (incl.) - r10
+; line right (excl.) - r9
+; line structure: "     342489   ;  comment here   \r"
+.deal_with_line:
+  ; ignore: ' ', '\r'
+  ; return early on ';'
+  mov r13, r10
+  
+  ret
+
+  
 section .bss
   ; bss data - 256 bytes for user input
   input_buffer resb 256
@@ -742,4 +783,4 @@ section .data
   newline_msg db 0xA
   newline_len equ $ - newline_msg
 
-  config_filename db "config.ini", 0
+  config_filename db "config.arqw", 0
