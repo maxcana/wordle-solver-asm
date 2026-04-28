@@ -718,7 +718,10 @@ sort_array:
       LD_REGS
       ret
 
+; MARK: arqw
+
 ; parse arqw file (u64 numbers separated by lines)
+; it will parse the first number string in each line, and ignore everything else.
 ; rsi - memory address of arqw string
 ; rdi - length of arqw string
 ; preserves: everything
@@ -733,31 +736,85 @@ parse_arqw:
   mov r10, rax ; start of current line
   mov r9, rax ; index
   .for_each_line:
-  inc r9
-  cmp [r9], 0xA
-  jne .for_each_line
-  ; if [r9] =  0xA, line is from from [r10, r9)
-  call .deal_with_line
+    inc r9
+    cmp [r9], 0xA
+    jne .for_each_line
+    ; if [r9] =  0xA, line is from from [r10, r9)
+    call .deal_with_line
 
-  ; if r9 = rbx, last line is from [r10, r9)
-  cmp r9, rbx
-  jne .for_each_line
+    cmp r9, rbx
+    jne .for_each_line
+
+  ; if r9 = rbx (end), last line is from [r10, r9)
   call .deal_with_line
 
   LD_REGS
   ret
   
 
-; line left (incl.) - r10
-; line right (excl.) - r9
-; line structure: "     342489   ;  comment here   \r"
+; r10 - line left (incl.)
+; r9 - line right (excl.)
+; line structure: "   stuff anything *#&$)@&*%)#  342489  [randomthings that arent numbers] ;  comment here   \r"
+; modifies: r13, r14, r15
+; Return:
+; rdx: 0 or 1, is there a number in the line?
+; r14 - start address of number (incl.) (0 if no number in line)
+; r15 - end address of number (incl.) (0 if no number in line)
 .deal_with_line:
   ; ignore: ' ', '\r'
   ; return early on ';'
   mov r13, r10
+  mov r14, 0 ; start of number
+  mov r15, 0 ; end of number
+
+  .loop:
+    cmp byte [r13], "0"
+    jb .not_num
+    cmp byte [r13], "9"
+    ja .not_num
+    ; if no start of number defined, define the start of number
+    cmp r14, 0
+    je start_already_defined
+    mov r14, r13 ; start of number
+    .start_already_defined:
+
+
+    .not_num:
+    ; if start of number already defined, and we hit a non-number, define the end of number and exit.
+    cmp r14, 0
+    je .next
+      mov r15, r13
+      mov rdx, 1
+      jmp .done ; found start and end of number
+
+    .next:
+    inc r13
+
+    cmp r13, r9
+    jne .loop
+  
+  ; if we iterated through the whole line, check if we have a start of number.
+  mov rdx, 0
+  cmp r14, 0
+  je .done ; if no start of number, we dont give an end of number
+  ; if there is a start of number, this means the number took the entire line (and no \r at end of line). give the end as the last character
+  mov r15, r9 
+  sub r15, 1
+  mov rdx, 1
+
+  .done:
   
   ret
 
+; r14 - start address of number string (incl.)
+; r15 - end address of number string (incl.)
+; modifies: r13, rdx
+; Return: rcx - number
+parse_u64:
+  mov [parse_u64_temp_qword], 0
+  mov r13, r14 ; r13 = current address (absolute)
+  ; need to convert decimal to hex.
+  ; MARK: TODO: I left off here
   
 section .bss
   ; bss data - 256 bytes for user input
@@ -771,6 +828,7 @@ section .bss
   ; use temp storage locally in subroutines where you want to pass data through STR_REGS or LD_REGS
   temp_qword resq 1 
   temp_qword_2 resq 1
+  parse_u64_temp_qword resq 1
 
   sort_output resw 14855
 
