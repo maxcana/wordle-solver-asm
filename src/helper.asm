@@ -1,5 +1,5 @@
-; printing, input handling, debugging utility
-; wrappers for linux and windows ABIs
+; printing, input handling, parsing, debugging utility
+; + wrappers for linux and windows ABIs
 default rel
 section .text
 ; exports
@@ -13,11 +13,13 @@ section .text
     global exit
     global write_fnumber
     global write_fdouble
-    global sort_array
+    global radix_sort
+    global setup_configuration
 
   ; bss
     global input_buffer ; bss data - output of input subroutine
     global sort_output
+    global configuration
     
 
 ; windows api stuff
@@ -28,6 +30,7 @@ section .text
   extern ReadFile
   extern CreateFileA
   extern CloseHandle
+  extern GetLastError
 %endif
 
 ; MARK: Macros
@@ -92,6 +95,140 @@ section .text
   pop rbx
   pop rax
 %endmacro
+
+; MARK: Random utility
+
+; call when something goes wrong
+; preserves: everything
+yikes:
+  push rsi
+  push rdi
+  mov rsi, yikes_msg
+  mov rdi, yikes_len
+  call print
+  %ifdef WINDOWS
+  call GetLastError
+  mov rdi, rax
+  call write_fnumber
+  call print ; error num
+  %endif
+  pop rdi
+  pop rsi
+  ret
+
+; writes a base 10 number as a (formatted ASCII string) into memory from a number
+; rdi - number (u64)
+; Return: 
+; rdi - length of string (excluding newline)
+; rsi - memory location of string
+; preserves: everything
+write_fnumber:
+  mov [temp_qword], rdi
+  STR_REGS
+  mov rdi, [temp_qword]
+
+  mov rcx, 10 ; divisor for div ecx
+  mov rbp, number_buffer
+  add rbp, 256
+  xor r8,r8
+
+  mov eax, edi
+  mov rdx, rdi
+  shr rdx, 32
+  log_int_loop:
+    ; edx = higher 32 bits of dividend
+    ; eax = lower 32 bits of dividend
+    div ecx ; divisor
+
+    ; rax is 64-bit quotient
+    ; rdx is 64-bit remainder
+    dec rbp
+    add rdx, "0" ; add the ascii value for "0" (0x30)
+    mov [rbp], dl ; push remainder (last digit) and replace old value with quotient
+
+    inc r8 ; increase length of string
+    
+    ; set up for next iteration
+    mov rdx, rax
+    shr rdx, 32
+
+    cmp eax, 0
+    jne log_int_loop
+
+  mov [temp_qword], r8
+  mov [temp_qword_2], rbp
+  LD_REGS
+  mov rdi, [temp_qword]
+  mov rsi, [temp_qword_2]
+  ret
+
+; writes the result of the division with 3 digits after decimal of precision (floored)
+; rsi - divisor i64 (top)
+; rdi - dividend i64 (bottom)
+; Return:
+; rdi - length of string (excluding newline)
+; rsi - memory location of string
+; modifies: xmm4-6 only
+write_fdouble:
+  mov [rel temp_qword], rsi
+  mov [rel temp_qword_2], rdi
+  STR_REGS
+  mov rsi, [rel temp_qword]
+  mov rdi, [rel temp_qword_2]
+
+  ; note: high 64 bits of xmm register is unused for double (f64)
+  cvtsi2sd xmm4, rsi
+  cvtsi2sd xmm5, rdi
+  divsd xmm4, xmm5 ; xmm4 = xmm4/xmm5
+  ; we are NOT using the C library printf (anything but the C library)
+
+  ; example: xmm4 = 48923560.454389
+  cvttsd2si rax, xmm4 ; rax = 48923560
+  cvtsi2sd xmm5, rax ; xmm5 = 48923560
+  subsd xmm4, xmm5 ; xmm4 = 0.454389
+  
+  mov r9, 1000 ; temp r9 (10^3 = 3 digits after decimal)
+  cvtsi2sd xmm6, rax
+  mulsd xmm4, xmm6 ; xmm4 = 454.3
+  cvttsd2si rbx, xmm4 ; rbx = 454
+
+  ; now to write the string into the buffer
+  mov rdi, rax
+  call write_fnumber
+
+  ; copy to stack
+  ; rsi = src, rdi = dest, rcx = count
+  mov rcx, rdi ; count
+  lea rdi, [rel double_buffer] ; dest
+  cld
+  rep movsq
+  add rdi, rcx
+
+  ; write the period
+  mov byte [rdi], '.'
+  inc rdi
+  mov rbp, rdi
+
+  mov rdi, rbx
+  call write_fnumber
+
+  ; copy to stack again
+  mov rcx, rdi ; count
+  mov rdi, rbp ; dest
+  cld
+  rep movsq
+  add rbp, rcx
+
+  ; outputs
+  mov rdi, rbp
+  lea rax, [rel double_buffer]
+  sub rdi, rax ; rdi = length
+
+  mov [rel temp_qword], rdi
+  LD_REGS
+  lea rsi, [rel double_buffer]
+  mov rdi, [rel temp_qword]
+  ret
 
 ; MARK: Bitmaps & words
 safe_print_bitmap:
@@ -409,7 +546,7 @@ win64_input:
 ; modifies: caller-saved registers + more
 ; Return: rdi - bytes read (length of contents)
 win64_read_config:
-  sub rsp, 40 ; [ ... 24 local (we push later) ... 8 unused, for alignment ... 32 shadow]
+  sub rsp, 8 ; [ 8 unused, for alignment ]
 
   ; CreateFileA(LPCSTR lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile)
   lea rcx, [rel config_filename] ; #1 lpFileName
@@ -419,12 +556,13 @@ win64_read_config:
   push 0 ; #7 NULL
   push 0x80 ; #6 FILE_ATTRIBUTE_NORMAL
   push 3 ; #5 OPEN_EXISTING
+  sub rsp, 32 ; [32 shadow ... 24 local ( from pushing ) ... 8 unused, for alignment ]
   call CreateFileA
   add rsp, 64 ; reset rsp
 
   cmp rax, -1 ; INVALID_HANDLE_VALUE
   jne .no_error
-    call yikes
+    call yikes ; why is this hit?
     ret
   .no_error:
 
@@ -436,7 +574,7 @@ win64_read_config:
   mov rcx, r14
   lea rdx, [rel config_buffer]
   mov r8, config_buffer_len
-  lea r14, [rel win64_input_num_bytes_read_output]
+  ; lea r14, [rel win64_input_num_bytes_read_output]
   push 0 ; lpOverlapped (NULL)
   call ReadFile
   mov qword r15, [rel win64_input_num_bytes_read_output]
@@ -454,135 +592,6 @@ win64_read_config:
 
 %endif
 
-; MARK: Random utility
-
-; call when something goes wrong
-; preserves: everything
-yikes:
-  push rsi
-  push rdi
-  mov rsi, yikes_msg
-  mov rdi, yikes_len
-  call print
-  pop rdi
-  pop rsi
-  ret
-
-; writes a base 10 number as a (formatted ASCII string) into memory from a number
-; rdi - number (u64)
-; Return: 
-; rdi - length of string (excluding newline)
-; rsi - memory location of string
-; preserves: everything
-write_fnumber:
-  mov [temp_qword], rdi
-  STR_REGS
-  mov rdi, [temp_qword]
-
-  mov rcx, 10 ; divisor for div ecx
-  mov rbp, number_buffer
-  add rbp, 256
-  xor r8,r8
-
-  mov eax, edi
-  mov rdx, rdi
-  shr rdx, 32
-  log_int_loop:
-    ; edx = higher 32 bits of dividend
-    ; eax = lower 32 bits of dividend
-    div ecx ; divisor
-
-    ; rax is 64-bit quotient
-    ; rdx is 64-bit remainder
-    dec rbp
-    add rdx, "0" ; add the ascii value for "0" (0x30)
-    mov [rbp], dl ; push remainder (last digit) and replace old value with quotient
-
-    inc r8 ; increase length of string
-    
-    ; set up for next iteration
-    mov rdx, rax
-    shr rdx, 32
-
-    cmp eax, 0
-    jne log_int_loop
-
-  mov [temp_qword], r8
-  mov [temp_qword_2], rbp
-  LD_REGS
-  mov rdi, [temp_qword]
-  mov rsi, [temp_qword_2]
-  ret
-
-; writes the result of the division with 3 digits after decimal of precision (floored)
-; rsi - divisor i64 (top)
-; rdi - dividend i64 (bottom)
-; Return:
-; rdi - length of string (excluding newline)
-; rsi - memory location of string
-; modifies: xmm4-6 only
-write_fdouble:
-  mov [rel temp_qword], rsi
-  mov [rel temp_qword_2], rdi
-  STR_REGS
-  mov rsi, [rel temp_qword]
-  mov rdi, [rel temp_qword_2]
-
-  ; note: high 64 bits of xmm register is unused for double (f64)
-  cvtsi2sd xmm4, rsi
-  cvtsi2sd xmm5, rdi
-  divsd xmm4, xmm5 ; xmm4 = xmm4/xmm5
-  ; we are NOT using the C library printf (anything but the C library)
-
-  ; example: xmm4 = 48923560.454389
-  cvttsd2si rax, xmm4 ; rax = 48923560
-  cvtsi2sd xmm5, rax ; xmm5 = 48923560
-  subsd xmm4, xmm5 ; xmm4 = 0.454389
-  
-  mov r9, 1000 ; temp r9 (10^3 = 3 digits after decimal)
-  cvtsi2sd xmm6, rax
-  mulsd xmm4, xmm6 ; xmm4 = 454.3
-  cvttsd2si rbx, xmm4 ; rbx = 454
-
-  ; now to write the string into the buffer
-  mov rdi, rax
-  call write_fnumber
-
-  ; copy to stack
-  ; rsi = src, rdi = dest, rcx = count
-  mov rcx, rdi ; count
-  lea rdi, [rel double_buffer] ; dest
-  cld
-  rep movsq
-  add rdi, rcx
-
-  ; write the period
-  mov byte [rdi], '.'
-  inc rdi
-  mov rbp, rdi
-
-  mov rdi, rbx
-  call write_fnumber
-
-  ; copy to stack again
-  mov rcx, rdi ; count
-  mov rdi, rbp ; dest
-  cld
-  rep movsq
-  add rbp, rcx
-
-  ; outputs
-  mov rdi, rbp
-  lea rax, [rel double_buffer]
-  sub rdi, rax ; rdi = length
-
-  mov [rel temp_qword], rdi
-  LD_REGS
-  lea rsi, [rel double_buffer]
-  mov rdi, [rel temp_qword]
-  ret
-  
-
 
 ; MARK: Radix sorter
 
@@ -592,7 +601,7 @@ write_fdouble:
 ; rdi - length of array (maximum 14855)
 ; preserves: everything
 ; [(most of this) FUNCTION IS NOT WRITTEN BY ME]
-sort_array:
+radix_sort:
   mov [rel temp_qword], rsi
   mov [rel temp_qword_2], rdi
   STR_REGS
@@ -720,11 +729,24 @@ sort_array:
 
 ; MARK: arqw
 
+; read and parse config.arqw into an array
+; preserves: everything except rsi and rdi
+; return:
+; [configuration] - parsed array of qwords
+; rdi - length of array
+setup_configuration:
+  call read_config
+  lea rsi, [rel config_buffer]
+  call parse_arqw
+
 ; parse arqw file (u64 numbers separated by lines)
-; it will parse the first number string in each line, and ignore everything else.
+; it will parse the first number string in each line, and ignore everything else. skipping lines without numbers.
 ; rsi - memory address of arqw string
 ; rdi - length of arqw string
-; preserves: everything
+; preserves: everything, except rdi
+; return: 
+; [configuration] - parsed array of qwords
+; rdi - length of array
 parse_arqw:
   mov [rel temp_qword], rsi
   mov [rel temp_qword_2], rdi
@@ -735,26 +757,47 @@ parse_arqw:
 
   mov r10, rax ; start of current line
   mov r9, rax ; index
+
+  lea rsi, [rel configuration] ; address of new element in array
+  mov rdi, 0 ; length of array
   .for_each_line:
     inc r9
-    cmp [r9], 0xA
+    cmp byte [r9], 0xA
     jne .for_each_line
     ; if [r9] =  0xA, line is from from [r10, r9)
     call .deal_with_line
+    cmp rdx, 0 ; no number in line, go to next line
+    je .for_each_line
+      ; if there is number in line
+      call parse_u64 
+      mov [rsi], rcx
+      add rsi, 8
+      inc rdi
 
     cmp r9, rbx
     jne .for_each_line
 
   ; if r9 = rbx (end), last line is from [r10, r9)
   call .deal_with_line
+  cmp rdx, 0 ; no number in line, go to end
+  je .end
+    ; if there is number in line
+    call parse_u64 
+    mov [rsi], rcx
+    add rsi, 8
+    inc rdi
+  
+  .end:
 
+  mov [temp_qword], rdi ; length
   LD_REGS
+  mov rdi, [temp_qword]
   ret
   
 
 ; r10 - line left (incl.)
 ; r9 - line right (excl.)
-; line structure: "   stuff anything *#&$)@&*%)#  342489  [randomthings that arent numbers] ;  comment here   \r"
+; line structure: "   stuff anything *#&$)@&*%)#  342489  [randomthings that arent numbers] ;  comment here   \r" or " ; 4328 is a cool number"
 ; modifies: r13, r14, r15
 ; Return:
 ; rdx: 0 or 1, is there a number in the line?
@@ -764,6 +807,7 @@ parse_arqw:
   ; ignore: ' ', '\r'
   ; return early on ';'
   mov r13, r10
+  mov rdx, 0 ; defaul = fail
   mov r14, 0 ; start of number
   mov r15, 0 ; end of number
 
@@ -774,20 +818,24 @@ parse_arqw:
     ja .not_num
     ; if no start of number defined, define the start of number
     cmp r14, 0
-    je start_already_defined
+    jne .start_already_defined
     mov r14, r13 ; start of number
     .start_already_defined:
+    jmp .next
 
-
-    .not_num:
-    ; if start of number already defined, and we hit a non-number, define the end of number and exit.
-    cmp r14, 0
-    je .next
-      mov r15, r13
-      mov rdx, 1
-      jmp .done ; found start and end of number
+      .not_num:
+      ; if start of number already defined, and we hit a non-number, define the end of number and exit.
+      cmp r14, 0
+      je .next
+        mov r15, r13
+        sub r15, 1
+        mov rdx, 1
+        jmp .done ; found start and end of number
 
     .next:
+    cmp byte [r13], ";"
+    je .done
+
     inc r13
 
     cmp r13, r9
@@ -808,13 +856,28 @@ parse_arqw:
 
 ; r14 - start address of number string (incl.)
 ; r15 - end address of number string (incl.)
-; modifies: r13, rdx
+; modifies: r13, rdx, r12, r11, rcx
 ; Return: rcx - number
 parse_u64:
-  mov [parse_u64_temp_qword], 0
-  mov r13, r14 ; r13 = current address (absolute)
-  ; need to convert decimal to hex.
   ; MARK: TODO: I left off here
+
+  ; iterate through each byte, subtract "0"
+  mov r13, r15 ; r13 = current address (absolute)
+  mov r11, 1 ; r11 = digit multiplier, ones digit first
+  .loop:
+    movzx rdx, byte [r13]
+    sub rdx, "0"
+    ; convert to hex by using summing 10*each byte
+    
+    mov r12, rdx
+    imul r12, r11 ; r12 = dl * (digits place)
+    imul r11, r11, 10 ; r11 = 10 * r11
+    add rcx, r12 ; sum it
+
+    dec r13
+    cmp r13, r14
+    jae .loop
+  
   
 section .bss
   ; bss data - 256 bytes for user input
@@ -828,11 +891,14 @@ section .bss
   ; use temp storage locally in subroutines where you want to pass data through STR_REGS or LD_REGS
   temp_qword resq 1 
   temp_qword_2 resq 1
+
   parse_u64_temp_qword resq 1
+  configuration resq 100
+
 
   sort_output resw 14855
 
-  config_buffer resb 1024
+  config_buffer resb 16384 ; maximum fize size = 16KB
   config_buffer_len equ $ - config_buffer
 section .data
   yikes_msg db "yikes", 0xA
@@ -841,4 +907,4 @@ section .data
   newline_msg db 0xA
   newline_len equ $ - newline_msg
 
-  config_filename db "config.arqw", 0
+  config_filename db "C:\\user\\dev\\assembly\\wordle-solver-asm\\config.arqw", 0

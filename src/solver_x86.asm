@@ -19,11 +19,13 @@ section .text
   extern exit
   extern write_fnumber
   extern write_fdouble
-  extern sort_array
+  extern radix_sort
+  extern setup_configuration
 
   ; bss
   extern input_buffer ; bss data label - probably just a memory address, like all the other extern labels. all hail the linker
   extern sort_output
+  extern configuration
 
 ; dict.asm
   extern words
@@ -38,6 +40,15 @@ _start:
   ; must use [rel msg] not [abs msg] or else compiler instantly complains and doesn't compile
   ; solver_x86.obj:solver_x86.asm:(.text+0x1e): relocation truncated to fit: IMAGE_REL_AMD64_ADDR32 against `.data'
   call print
+
+  and rsp, 0b1111111111111111111111111111111111111111111111111111111111110000 ; ensure 16 byte aligned
+
+  ; set up config to [arqw_buffer]
+  call setup_configuration
+  cmp rdi, 2
+  jae .ok
+    call yikes ; config too short
+  .ok:
 
   ; MARK: encode words
   ; words_encoded shall be an array with each element = 8 bytes, storing one word
@@ -440,7 +451,7 @@ _start:
   ; now we need sort the scores, by making a new array of indexes ordered by highest score first
   lea rsi, [rel guess_scores]
   mov rdi, 14855
-  call sort_array
+  call radix_sort
 
   mov r9, 0
   print_top:
@@ -482,7 +493,7 @@ _start:
   call print
 
 
-  cmp r9,5 ; print_top_x
+  cmp r9,[configuration + 8] ; print_top_x
   jne print_top
   
   
@@ -800,7 +811,7 @@ write_raw_bit:
 ; output: xmm0, xmm1, xmm2 will be updated (via XOR with a mask)
 write_raw_bit_sequence:
   push r11
-  push r14 ; yikes yikes yikes but sadly need it (for the .loop section)
+  push r14 ; bad but sadly need it (for the .loop section)
   mov r11, rbx
   mov r14, rcx
 
