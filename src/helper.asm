@@ -569,13 +569,13 @@ win64_read_config:
   mov r14, rax ; rax = config handle
 
   ; ReadFile(handle, buffer, len, &bytes_read, lpOverlapped)
-  sub rsp, 32 ; [... 32 shadow space]
-
+  
   mov rcx, r14
   lea rdx, [rel config_buffer]
   mov r8, config_buffer_len
-  ; lea r14, [rel win64_input_num_bytes_read_output]
+  lea r9, [rel win64_input_num_bytes_read_output]
   push 0 ; lpOverlapped (NULL)
+  sub rsp, 32 ; [... 32 shadow space]
   call ReadFile
   mov qword r15, [rel win64_input_num_bytes_read_output]
   add rsp, 40 ; reset rsp
@@ -738,6 +738,7 @@ setup_configuration:
   call read_config
   lea rsi, [rel config_buffer]
   call parse_arqw
+  ret
 
 ; parse arqw file (u64 numbers separated by lines)
 ; it will parse the first number string in each line, and ignore everything else. skipping lines without numbers.
@@ -762,10 +763,14 @@ parse_arqw:
   mov rdi, 0 ; length of array
   .for_each_line:
     inc r9
+    cmp r9, rbx
+    je .r9_at_end
     cmp byte [r9], 0xA
     jne .for_each_line
     ; if [r9] =  0xA, line is from from [r10, r9)
     call .deal_with_line
+    mov r10, r9
+    add r10, 1
     cmp rdx, 0 ; no number in line, go to next line
     je .for_each_line
       ; if there is number in line
@@ -774,9 +779,7 @@ parse_arqw:
       add rsi, 8
       inc rdi
 
-    cmp r9, rbx
-    jne .for_each_line
-
+  .r9_at_end:
   ; if r9 = rbx (end), last line is from [r10, r9)
   call .deal_with_line
   cmp rdx, 0 ; no number in line, go to end
@@ -803,6 +806,7 @@ parse_arqw:
 ; rdx: 0 or 1, is there a number in the line?
 ; r14 - start address of number (incl.) (0 if no number in line)
 ; r15 - end address of number (incl.) (0 if no number in line)
+
 .deal_with_line:
   ; ignore: ' ', '\r'
   ; return early on ';'
@@ -864,6 +868,7 @@ parse_u64:
   ; iterate through each byte, subtract "0"
   mov r13, r15 ; r13 = current address (absolute)
   mov r11, 1 ; r11 = digit multiplier, ones digit first
+  mov rcx, 0
   .loop:
     movzx rdx, byte [r13]
     sub rdx, "0"
@@ -877,6 +882,8 @@ parse_u64:
     dec r13
     cmp r13, r14
     jae .loop
+  
+  ret
   
   
 section .bss
