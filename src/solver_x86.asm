@@ -21,6 +21,7 @@ section .text
   extern write_fdouble
   extern radix_sort
   extern setup_configuration
+  extern test_configuration
 
   ; bss
   extern input_buffer ; bss data label - probably just a memory address, like all the other extern labels. all hail the linker
@@ -49,6 +50,7 @@ _start:
   jae .ok
     call yikes ; config too short
   .ok:
+  call test_configuration
 
   ; MARK: encode words
   ; words_encoded shall be an array with each element = 8 bytes, storing one word

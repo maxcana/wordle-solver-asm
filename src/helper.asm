@@ -15,6 +15,7 @@ section .text
     global write_fdouble
     global radix_sort
     global setup_configuration
+    global test_configuration
 
   ; bss
     global input_buffer ; bss data - output of input subroutine
@@ -740,12 +741,32 @@ setup_configuration:
   call parse_arqw
   ret
 
+; rdi - length of config array
+; modifies: rax, rbx, rsi, rdi
+test_configuration:
+  mov rax, rdi ; index + 1
+  lea rbx, [rel configuration]
+  .loop:
+  mov rsi, [rbx]
+  mov rdi, "00000000"
+  add rsi, rdi
+  mov rdi, 8
+  push rsi
+  mov rsi, rsp
+  call print
+  call print_newline
+  pop rsi
+  add rbx, 8
+  dec rax
+  jne .loop
+  ret
+
 ; parse arqw file (u64 numbers separated by lines)
 ; it will parse the first number string in each line, and ignore everything else. skipping lines without numbers.
 ; rsi - memory address of arqw string
 ; rdi - length of arqw string
 ; preserves: everything, except rdi
-; return: 
+; return:
 ; [configuration] - parsed array of qwords
 ; rdi - length of array
 parse_arqw:
