@@ -334,7 +334,7 @@ safe_print_word:
 ; modifies: caller-saved registers, rsi, rdi, r8
 print_word:
   mov r8, 5
-  mov rdi, 0x6161616161616161
+  mov rdi, 0x4141414141414141
   add rsi, rdi
   loop:
   ; sil = letter
@@ -352,6 +352,7 @@ print_word:
   ; now we have the stack as ...........AAHED
   call print
   add rsp, 16
+  ret
 
 ; just calls print, passing in newline
 ; preserves: everything

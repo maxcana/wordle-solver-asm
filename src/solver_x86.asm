@@ -373,18 +373,23 @@ _start:
       inc qword [rel for_ps_counter]
       cmp qword [rel for_ps_counter], 14855
       jne for_PS
-  
+
+    mov r15, [rsp]
+    and r15, 0x00_00_00_00_00_00_00_0F
+    cmp r15b, 0xF
+    jne .dont_print ; only print every 16 words
+
     ; write " words on average", 0xA
     mov r15, rsp ; copy old rsp
     mov rcx, 18
-    log_3_loop:
+    .log_3_loop:
       dec rcx
       lea rbx, [rel log_str_3]
       mov al, byte [rbx+rcx]
       dec rsp
       mov [rsp], al
       test rcx,rcx
-      jne log_3_loop
+      jne .log_3_loop
     
     mov [temp_qword_1], rdi
     ; write # eliminated words
@@ -403,18 +408,18 @@ _start:
 
     ; write " eliminates "
     mov rcx, 12
-    log_2_loop:
+    .log_2_loop:
       dec rcx
       lea rbx, [rel log_str_2]
       mov al, byte [rbx+rcx]
       dec rsp
       mov [rsp], al
       test rcx,rcx
-      jne log_2_loop
+      jne .log_2_loop
 
     ; write GUESS (rdi - guess in the form 00 00 00 00 00 07 04 03)
     mov rcx, 5
-    log_guess_loop:
+    .log_guess_loop:
       dec rcx
       add dil, 0x41
       dec rsp
@@ -422,11 +427,11 @@ _start:
       shr rdi, 8 ; drop last letter    
 
       test rcx,rcx
-      jne log_guess_loop
+      jne .log_guess_loop
     
     ; write "Guess "
     mov rcx, 6
-    log_1_loop:
+    .log_1_loop:
       dec rcx
       lea rbx, [rel log_str_1]
       mov al, byte [rbx+rcx]
@@ -434,7 +439,7 @@ _start:
       mov [rsp], al
 
       test rcx,rcx
-      jne log_1_loop
+      jne .log_1_loop
 
     mov r14, r15
     sub r14, rsp ; calculate length of string using difference in stack pointer
@@ -447,6 +452,8 @@ _start:
     call print
 
     mov rsp, r15 ; revive old rsp
+
+    .dont_print:
 
     ; add to guess_scores
     mov r15, [rsp] ; counter
@@ -468,7 +475,6 @@ _start:
 
   mov r9, 0
   print_top:
-  dec r9
   lea r10, [rel sort_output]
   lea r10, [r10 + r9 * 2] ; word (2 bytes)
   movzx r10, word [r10] ; r10 = index of guess
@@ -486,21 +492,27 @@ _start:
   mov rsi, scoring_1
   mov rdi, scoring_1_len
   call print
+
   mov rdi, r9
   call write_fnumber
   call print
+
   mov rsi, scoring_2
   mov rdi, scoring_2_len
   call print
+
   mov rsi, r12
   call safe_print_word
+
   mov rsi, scoring_3
   mov rdi, scoring_3_len
   call print
+
   mov rsi, r11
   mov rdi, 14855
   call write_fdouble
   call print
+
   mov rsi, scoring_4
   mov rdi, scoring_4_len
   call print
