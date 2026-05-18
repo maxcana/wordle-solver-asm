@@ -13,7 +13,7 @@ section .text
     global exit
     global write_fnumber
     global write_fdouble
-    global radix_sort
+    global sort_array
     global setup_configuration
     global test_configuration
 
@@ -184,12 +184,13 @@ write_fdouble:
   ; we are NOT using the C library printf (anything but the C library)
 
   ; example: xmm4 = 48923560.454389
+  
   cvttsd2si rax, xmm4 ; rax = 48923560
   cvtsi2sd xmm5, rax ; xmm5 = 48923560
   subsd xmm4, xmm5 ; xmm4 = 0.454389
   
   mov r9, 1000 ; temp r9 (10^3 = 3 digits after decimal)
-  cvtsi2sd xmm6, rax
+  cvtsi2sd xmm6, r9 ; xmm6 = 1000
   mulsd xmm4, xmm6 ; xmm4 = 454.3
   cvttsd2si rbx, xmm4 ; rbx = 454
 
@@ -197,12 +198,12 @@ write_fdouble:
   mov rdi, rax
   call write_fnumber
 
-  ; copy to stack
+  ; copy to buffer (rbp is buffer index)
   ; rsi = src, rdi = dest, rcx = count
   mov rcx, rdi ; count
   lea rdi, [rel double_buffer] ; dest
   cld
-  rep movsq
+  rep movsb
   add rdi, rcx
 
   ; write the period
@@ -213,12 +214,13 @@ write_fdouble:
   mov rdi, rbx
   call write_fnumber
 
-  ; copy to stack again
+  ; copy to buffer again (rbp is buffer index)
   mov rcx, rdi ; count
   mov rdi, rbp ; dest
-  cld
-  rep movsq
   add rbp, rcx
+  cld
+  rep movsb ; by the way, rep movsb clobbers rsi, rdi, rcx
+  
 
   ; outputs
   mov rdi, rbp
@@ -594,140 +596,75 @@ win64_read_config:
 %endif
 
 
-; MARK: Radix sorter
+; MARK: Sorting
 
-; radix sorter
-; outputs: array of words length rdi located at [sort_output]: indexes corresponding to values on the original array (from unsigned highest to lowest)
+; n^2 sorter (MEGA SLOW, performance doesnt matter here though)
 ; rsi - pointer to array of qwords
 ; rdi - length of array (maximum 14855)
+; the array must not contain any values equal to i64 min value
+; outputs: array of words length rdi located at [sort_output]: indexes corresponding to values on the original array (from signed highest to lowest)
 ; preserves: everything
-; [(most of this) FUNCTION IS NOT WRITTEN BY ME]
-radix_sort:
-  mov [rel temp_qword], rsi
-  mov [rel temp_qword_2], rdi
+sort_array:
+  mov [temp_qword], rsi
+  mov [temp_qword_2], rdi
   STR_REGS
-  ; r12 = input array ptr, r13 = length
-  mov r12, [rel temp_qword]
-  mov r13, [rel temp_qword_2]
-  lea r9, [rel sort_output] ; r9 permanently set to sort_output (for this function)
+  mov rsi, [temp_qword] ; start
+  
+  ; rsi = src, rdi = dest, rcx = count
+  lea rdi, [rel sort_buffer] ; dest
+  mov rcx, [temp_qword_2] ; length
+  cld
+  rep movsq
 
-  ; init sort_output with identity [0, 1, ..., n-1] as words
-  lea rdi, [rel sort_output]
-  xor ecx, ecx
-  .init_loop:
-      cmp ecx, r13d
-      jge .init_done
-      mov [rdi + rcx*2], cx
-      inc ecx
-      jmp .init_loop
-  .init_done:
-      ; 8 passes, LSB first
-      ; src always = sort_output (we scatter into stack buf, copy back)
-      ; this avoids needing a second resw buffer
-      xor r14, r14 ; pass index
+  lea rsi, [rel sort_buffer] ; rsi is the copied array
+  mov rdi, [temp_qword_2] ; rdi is the length
+  lea rbx, [rel sort_output]
 
-  .pass_loop:
-      cmp r14, 8
-      jge .pass_done
+  mov rdx, 0
+  .loop:
+    call find_highest_value_signed
+    ; remove the highest value from array (replace with min value)
+    mov rax, 0b1000000000000000000000000000000000000000000000000000000000000000
+    mov [rsi + r11*8], rax
 
-      mov rcx, r14
-      shl rcx, 3 ; shift = pass * 8
+    ; add index of highest value to output
+    mov word [rbx], r11w
+    add rbx, 2
+  inc rdx
+  cmp rdx, rdi
+  jne .loop
 
-      ; count[256] on stack, zero it
-      sub rsp, 256*8
-      mov rdi, rsp
-      xor eax, eax
-      mov r15, 256
-  .zero_loop:
-      mov [rdi + r15*8 - 8], rax
-      dec r15
-      jnz .zero_loop
+  LD_REGS
+  ret
 
-      ; --- count ---
-      xor r15, r15
-  .count_loop:
-      cmp r15, r13
-      jge .count_done
-      movzx rdx, word [r9 + r15*2] ; index (word)
-      mov rdx, [r12 + rdx*8] ; value
-      mov rbx, rdx
-      shr rbx, cl ; cl = shift
-      and rbx, 0xFF
-      inc qword [rsp + rbx*8]
-      inc r15
-      jmp .count_loop
-  .count_done:
+; rsi - address of array of qwords
+; rdi - length of array
+; modifies: r9, r10, r11
+; return:
+; r10 - highest value
+; r11 - index of highest value
+find_highest_value_signed:
+  ; iterate through array, r9: 0 -> 14854, find the highest value
+  ; each time replace the highest value with MIN VALUE
+  mov r9, 0
+  mov r10, 0b1000000000000000000000000000000000000000000000000000000000000000 ; r10 = highest val
+  mov r11, -1 ; index of highest val
+  .loop:
+  
+  cmp r10, [rsi + r9*8]
+  jge .nothing
+  ; if it is less (value > max), then:
+  ; set r10 to the higher value
+  ; set r11 to the index
+  mov r10, [rsi + r9*8]
+  mov r11, r9
 
-      ; --- exclusive prefix sum ---
-      xor r15, r15
-      xor rbp, rbp
-  .scan_loop:
-      cmp r15, 256
-      jge .scan_done
-      mov rdx, [rsp + r15*8]
-      mov [rsp + r15*8], rbp
-      add rbp, rdx
-      inc r15
-      jmp .scan_loop
-  .scan_done:
-      ; scatter into temp_buf on stack (above count[])
-      ; we need n words of scratch. allocate on stack
-      ; n <= 14855, so 14855*2 = 29710 bytes, round to 29712
-      sub rsp, 29712
-      ; layout: rsp+0 = word scratch buf, rsp+29712 = count[256] qwords
-      xor r15, r15
-  .scatter_loop:
-      cmp r15, r13
-      jge .scatter_done
-      
-      movzx rdx, word [r9 + r15*2] ; index
-      mov rax, [r12 + rdx*8] ; value
-      mov rbx, rax
-      shr rbx, cl
-      and rbx, 0xFF
-      mov rdi, [rsp + 29712 + rbx*8] ; position
-      inc qword [rsp + 29712 + rbx*8]
-      mov [rsp + rdi*2], dx ; store index word
-      inc r15
-      jmp .scatter_loop
-  .scatter_done:
-      ; copy scratch back to sort_output
-      lea rdi, [rel sort_output]
-      xor r15, r15
-  .copy_loop:
-      cmp r15, r13
-      jge .copy_done
-      movzx rax, word [rsp + r15*2]
-      mov [rdi + r15*2], ax
-      inc r15
-      jmp .copy_loop
-  .copy_done:
-
-      add rsp, 29712
-      add rsp, 256*8
-
-      inc r14
-      jmp .pass_loop
-
-  .pass_done:
-      ; reverse sort_output in-place (ascending -> descending)
-      xor r14, r14
-      mov r15, r13
-      dec r15
-  .reverse_loop:
-      cmp r14, r15
-      jge .reverse_done
-      movzx rax, word [r9 + r14*2]
-      movzx rbx, word [r9 + r15*2]
-      mov [r9 + r14*2], bx
-      mov [r9 + r15*2], ax
-      inc r14
-      dec r15
-      jmp .reverse_loop
-  .reverse_done:
-      LD_REGS
-      ret
-
+  .nothing:
+  
+  inc r9
+  cmp r9, rdi
+  jne .loop
+ret
 ; MARK: arqw
 
 ; read and parse config.arqw into an array
@@ -741,6 +678,7 @@ setup_configuration:
   call parse_arqw
   ret
 
+; print the configuration array
 ; rdi - length of config array
 ; modifies: rax, rbx, rsi, rdi
 test_configuration:
@@ -923,7 +861,7 @@ section .bss
   parse_u64_temp_qword resq 1
   configuration resq 100
 
-
+  sort_buffer resq 14855
   sort_output resw 14855
 
   config_buffer resb 16384 ; maximum fize size = 16KB

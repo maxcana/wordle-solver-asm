@@ -19,7 +19,7 @@ section .text
   extern exit
   extern write_fnumber
   extern write_fdouble
-  extern radix_sort
+  extern sort_array
   extern setup_configuration
   extern test_configuration
 
@@ -42,6 +42,13 @@ _start:
   ; solver_x86.obj:solver_x86.asm:(.text+0x1e): relocation truncated to fit: IMAGE_REL_AMD64_ADDR32 against `.data'
   call print
 
+  ; test decimal printer
+  mov rsi, 10
+  mov rdi, 3
+  call write_fdouble
+  call print
+  call print_newline
+
   and rsp, 0b1111111111111111111111111111111111111111111111111111111111110000 ; ensure 16 byte aligned
 
   ; set up config to [arqw_buffer]
@@ -60,7 +67,11 @@ _start:
     lea rax, [rel words] ; relative adressing REQUIRED?? (cant compile without it)
     lea rax, [rax + r12]
     mov rax, [rax + r12 * 4] ; 8 bytes. contains 1 word and the first 3 letters from the next word
-    bswap rax ; fix little-endian dogshit
+
+    ; fix little-endian dogshit
+    ; we store the data in big-endian because we use db, but when you do mov rax, [mem] it reads a little-endian qword into rax, so we have to swap it.
+    bswap rax 
+    
     ; ex. aahed aal = 61 61 68 65 64  61 61 6c
     ; subtract 61 to make it 00 00 07 04 03  00 00 0B
     ; shift right 3 bytes to make it 00 00 00 00 00 07 04 03
@@ -144,7 +155,9 @@ _start:
   
   mov qword [rel len_possible_secrets], 14855
   main_loop:
-  ; MARK: Input
+  cmp qword [configuration], 0
+  jne solver
+  ; MARK: Filtering
   mov rsi, prompt
   mov rdi, prompt_len
   call print
@@ -301,6 +314,7 @@ _start:
 
   ; now we have filtered possible_secrets and set its new length!
 
+  solver:
   ; MARK: Solver
   ; for PG
   ; for PS
@@ -372,23 +386,20 @@ _start:
       test rcx,rcx
       jne log_3_loop
     
-    
+    mov [temp_qword_1], rdi
     ; write # eliminated words
-    mov rcx, 10 ; divisor for div ecx
-    mov rax, r13 ; total_elim, lower 32 bits of dividend
-    log_int_loop:
-      xor edx,edx ; higher 32 bits of dividend
-      ; eax = dividend
-      div ecx ; divisor
+    mov rsi, r13
+    mov rdi, 14855
+    call write_fdouble
 
-      ; eax is quotient
-      ; edx is remainder
-      dec rsp
-      add rdx, "0" ; add the ascii value for "0" (0x30)
-      mov [rsp], dl ; push remainder (last digit) and replace old value with quotient
-      
-      cmp eax, 0
-      jne log_int_loop
+    ; copy to stack
+    ; rsi = src, rdi = dest, rcx = count
+    sub rsp, rdi
+    mov rcx, rdi ; count
+    mov rdi, rsp ; dest
+    cld
+    rep movsb
+    mov rdi, [temp_qword_1]
 
     ; write " eliminates "
     mov rcx, 12
@@ -453,14 +464,14 @@ _start:
   ; now we need sort the scores, by making a new array of indexes ordered by highest score first
   lea rsi, [rel guess_scores]
   mov rdi, 14855
-  call radix_sort
+  call sort_array
 
   mov r9, 0
   print_top:
   dec r9
   lea r10, [rel sort_output]
   lea r10, [r10 + r9 * 2] ; word (2 bytes)
-  movzx r10w, [r10] ; r10 = index of guess
+  movzx r10, word [r10] ; r10 = index of guess
   
   lea r11, [rel guess_scores]
   lea r11, [r11 + r10*8]
@@ -1143,3 +1154,5 @@ section .bss
 
   alignb 16
   ps_temp_space resb 118840 ; temp space
+
+  temp_qword_1 resq 1
