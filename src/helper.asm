@@ -122,7 +122,7 @@ yikes:
   ret
 
 ; store the current cycle count in the measurement table for a measurement id
-; sil - measurement id
+; sil - measurement id (for concurrent measurements)
 ; preserves: everything
 measure_start:
   mov byte [temp_qword], sil
@@ -767,15 +767,11 @@ test_configuration:
   mov rax, rdi ; index + 1
   lea rbx, [rel configuration]
   .loop:
-  mov rsi, [rbx]
-  mov rdi, "00000000"
-  add rsi, rdi
-  mov rdi, 8
-  push rsi
-  mov rsi, rsp
+  mov rdi, [rbx]
+  call write_fnumber
   call print
   call print_newline
-  pop rsi
+  
   add rbx, 8
   dec rax
   jne .loop
@@ -852,7 +848,7 @@ parse_arqw:
   ; ignore: ' ', '\r'
   ; return early on ';'
   mov r13, r10
-  mov rdx, 0 ; defaul = fail
+  mov rdx, 0 ; default = fail
   mov r14, 0 ; start of number
   mov r15, 0 ; end of number
 

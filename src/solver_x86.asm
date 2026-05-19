@@ -36,13 +36,25 @@ section .text
 ; MARK: Macros
 ; defines string literal (in .text segment), adds a null terminator, loads its address into rdi
 %macro MEASURE_MSG 1
-    jmp %%after_msg ; %% is a macro-local label. it's like a . but can be used mutliple times in the same parent label.
-    %%msg_str db %1, 0
-%%after_msg:
-    lea rdi, [rel %%msg_str]
+  jmp %%after_msg ; %% is a macro-local label. it's like a . but can be used mutliple times in the same parent label.
+  %%msg_str db %1, 0
+  %%after_msg:
+  lea rdi, [rel %%msg_str]
 %endmacro
 
-
+%macro MSTART 1
+  push rsi
+  mov rsi, %1
+  call measure_start
+  pop rsi
+%endmacro
+%macro MEND 2
+  push rsi
+  mov rsi, %1
+  MEASURE_MSG %2
+  call measure_start
+  pop rsi
+%endmacro
 main:
 _start:
   ; Set up arguments for print function
@@ -69,11 +81,12 @@ _start:
   jae .ok
     call yikes ; config too short
   .ok:
-  call test_configuration
+  call test_configuration ; MARK: TODO: I left off here: Configuration only works with up to 2 lines! MSTART & MEND untested (nested macros). Is endianness handled correctly in configuration?
 
+  MSTART 0
+  MEND 0, "Test measurement (empty)"
   
-  mov rsi, 0
-  call measure_start
+  MSTART 0
   ; MARK: encode words
   ; words_encoded shall be an array with each element = 8 bytes, storing one word
   ; ex: 00 00 00 00 00 07 04 03, 00 00 00 00 00 0B 08 08, ...
@@ -107,9 +120,8 @@ _start:
 
     jne for_word
   
-  mov rsi, 0
-  MEASURE_MSG "Encode words"
-  call measure_end
+  MEND 0, "Encode words"
+  MSTART 0
 
   ; encode bitmap cache
   xor r12d,r12d
@@ -172,6 +184,9 @@ _start:
     cmp r12, 14855
     jne cache_loop
   
+  mov rsi, 0
+  MEND 0, "Bitmap cache"
+
   mov qword [rel len_possible_secrets], 14855
   main_loop:
   cmp qword [configuration], 0
@@ -270,7 +285,7 @@ _start:
   xor r10d,r10d ; new len_ps
 
   ; we will write the new array to ps_temp_space then copy it over to possible_secrets
-  eliminate_based_on_info: ; UNFINISHED SECTION
+  eliminate_based_on_info:
     mov rsi, [rcx] ; rsi = secret
     mov r11, rsi
     shr r11, 40
@@ -321,7 +336,6 @@ _start:
   mov rsi, filter_4
   mov rdi, filter_4_len
   call print
-  
 
   mov [rel len_possible_secrets], r10 ; write new length
   ; copy temp ps into real ps
@@ -357,8 +371,9 @@ _start:
       lea rbx, [rel possible_secrets]
       mov rsi, [rel for_ps_counter] ; counter
       mov rsi, [rbx + rsi*8] ; ps
+
       call get_colors ; r8 - colors in the form 00 00 00 01 02 00 02 01
-  
+
       call make_bitmask
     
       mov r9, [rel len_possible_secrets] ; counter

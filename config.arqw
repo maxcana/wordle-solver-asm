@@ -2,3 +2,4 @@
 
 0 ; solve_initially
 5 ; print_top_x_guesses
+12345678 ; test
