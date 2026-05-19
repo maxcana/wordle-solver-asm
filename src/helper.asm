@@ -16,6 +16,9 @@ section .text
     global sort_array
     global setup_configuration
     global test_configuration
+    global measure_start
+    global measure_end
+    global cstr_len
 
   ; bss
     global input_buffer ; bss data - output of input subroutine
@@ -45,6 +48,7 @@ section .text
         call %2
     %endif
 %endmacro
+
 
 ; note: storing this much might be mega slow, so don't print too oftenz
 ; its like pushaq if it existed, but also pushes xmm0-2 registers
@@ -116,6 +120,70 @@ yikes:
   pop rdi
   pop rsi
   ret
+
+; store the current cycle count in the measurement table for a measurement id
+; sil - measurement id
+; preserves: everything
+measure_start:
+  mov byte [temp_qword], sil
+  STR_REGS
+  movzx rsi, byte [temp_qword]
+
+  rdtscp
+  shl rdx, 32
+  or rax, rdx ; rax = cycle count
+
+  lea rdx, [rel measurement_table]
+  mov [rdx + rsi], rax ; store cycle count in measurement_table
+  LD_REGS
+  ret
+
+; print the cycles elapsed from entry sil in the measurement table
+; sil - measurement id
+; rdi - ptr to cstr holding measurement name to print
+; preserves: everything
+measure_end:
+  mov byte [temp_qword], sil
+  mov [temp_qword_2], rdi
+  STR_REGS
+  movzx rsi, byte [temp_qword]
+  mov r15, [temp_qword_2]
+
+  rdtscp
+  shl rdx, 32
+  or rax, rdx ; rax = cycle count
+
+  lea rdx, [rel measurement_table]
+  mov rbx, [rdx + rsi] ; rbx = old cycle count
+
+  sub rax, rbx
+  ; rax = cycles elapsed
+  
+  mov rsi, measure_1
+  mov rdi, measure_1_len
+  call print
+
+  mov rsi, r15
+  call cstr_len
+  call print
+
+  mov rsi, measure_2
+  mov rdi, measure_2_len
+  call print
+
+  mov rdi, rax
+  call write_fnumber
+  call print
+
+  mov rsi, measure_3
+  mov rdi, measure_3_len
+  call print
+
+  LD_REGS
+  
+  ret 
+
+; MARK: String utils
 
 ; writes a base 10 number as a (formatted ASCII string) into memory from a number
 ; rdi - number (u64)
@@ -231,6 +299,19 @@ write_fdouble:
   LD_REGS
   lea rsi, [rel double_buffer]
   mov rdi, [rel temp_qword]
+  ret
+
+; rsi - ptr to first char of cstr
+; return: rdi - length of cstr (excluding the "null-terminator" 0)
+; preserves: everything
+cstr_len:
+  xor edi, edi
+  .loop:
+    cmp byte [rsi + rdi], 0 ; end of cstr
+    je .end
+  inc rdi
+  jmp .loop
+  .end:
   ret
 
 ; MARK: Bitmaps & words
@@ -823,8 +904,6 @@ parse_arqw:
 ; modifies: r13, rdx, r12, r11, rcx
 ; Return: rcx - number
 parse_u64:
-  ; MARK: TODO: I left off here
-
   ; iterate through each byte, subtract "0"
   mov r13, r15 ; r13 = current address (absolute)
   mov r11, 1 ; r11 = digit multiplier, ones digit first
@@ -867,6 +946,8 @@ section .bss
 
   config_buffer resb 16384 ; maximum fize size = 16KB
   config_buffer_len equ $ - config_buffer
+
+  measurement_table resq 256
 section .data
   yikes_msg db "yikes", 0xA
   yikes_len equ $ - yikes_msg
@@ -875,3 +956,10 @@ section .data
   newline_len equ $ - newline_msg
 
   config_filename db "C:\\user\\dev\\assembly\\wordle-solver-asm\\config.arqw", 0
+
+  measure_1 db `Measurement \"`
+  measure_1_len equ $ - measure_1
+  measure_2 db `\" completed in `
+  measure_2_len equ $ - measure_2
+  measure_3 db " cycles", 0xA
+  measure_3_len equ $ - measure_3

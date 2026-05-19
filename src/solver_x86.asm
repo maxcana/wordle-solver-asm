@@ -22,6 +22,8 @@ section .text
   extern sort_array
   extern setup_configuration
   extern test_configuration
+  extern measure_start
+  extern measure_end
 
   ; bss
   extern input_buffer ; bss data label - probably just a memory address, like all the other extern labels. all hail the linker
@@ -30,6 +32,16 @@ section .text
 
 ; dict.asm
   extern words
+
+; MARK: Macros
+; defines string literal (in .text segment), adds a null terminator, loads its address into rdi
+%macro MEASURE_MSG 1
+    jmp %%after_msg ; %% is a macro-local label. it's like a . but can be used mutliple times in the same parent label.
+    %%msg_str db %1, 0
+%%after_msg:
+    lea rdi, [rel %%msg_str]
+%endmacro
+
 
 main:
 _start:
@@ -59,6 +71,9 @@ _start:
   .ok:
   call test_configuration
 
+  
+  mov rsi, 0
+  call measure_start
   ; MARK: encode words
   ; words_encoded shall be an array with each element = 8 bytes, storing one word
   ; ex: 00 00 00 00 00 07 04 03, 00 00 00 00 00 0B 08 08, ...
@@ -92,6 +107,10 @@ _start:
 
     jne for_word
   
+  mov rsi, 0
+  MEASURE_MSG "Encode words"
+  call measure_end
+
   ; encode bitmap cache
   xor r12d,r12d
   cache_loop:
