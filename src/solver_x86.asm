@@ -66,12 +66,9 @@ _start:
   ; solver_x86.obj:solver_x86.asm:(.text+0x1e): relocation truncated to fit: IMAGE_REL_AMD64_ADDR32 against `.data'
   call print
 
-  ; test decimal printer
-  mov rsi, 10
-  mov rdi, 3
-  call write_fdouble
+  lea rsi, [rel config_str]
+  mov rdi, config_str_len
   call print
-  call print_newline
 
   and rsp, 0b1111111111111111111111111111111111111111111111111111111111110000 ; ensure 16 byte aligned
 
@@ -1182,6 +1179,9 @@ section .data
   scoring_3_len equ $ - scoring_3
   scoring_4 db " words on average", 0xA
   scoring_4_len equ $ - scoring_4
+
+  config_str db "Configuration: ", 0xA
+  config_str_len equ $ - config_str
 section .bss
   ; each word is 8 bytes (left 3 are index, right 5 are u8 letters)
   ; 14855 words * 8 = 118840 bytes

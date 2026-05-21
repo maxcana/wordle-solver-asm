@@ -805,7 +805,7 @@ parse_arqw:
     cmp byte [r9], 0xA
     jne .for_each_line
     ; if [r9] =  0xA, line is from from [r10, r9)
-    call .deal_with_line
+    call deal_with_line
     mov r10, r9
     add r10, 1
     cmp rdx, 0 ; no number in line, go to next line
@@ -815,10 +815,12 @@ parse_arqw:
       mov [rsi], rcx
       add rsi, 8
       inc rdi
+    cmp r9, rbx
+    jne .for_each_line
 
   .r9_at_end:
   ; if r9 = rbx (end), last line is from [r10, r9)
-  call .deal_with_line
+  call deal_with_line
   cmp rdx, 0 ; no number in line, go to end
   je .end
     ; if there is number in line
@@ -843,8 +845,7 @@ parse_arqw:
 ; rdx: 0 or 1, is there a number in the line?
 ; r14 - start address of number (incl.) (0 if no number in line)
 ; r15 - end address of number (incl.) (0 if no number in line)
-
-.deal_with_line:
+deal_with_line:
   ; ignore: ' ', '\r'
   ; return early on ';'
   mov r13, r10
