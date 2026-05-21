@@ -52,7 +52,7 @@ section .text
   push rsi
   mov rsi, %1
   MEASURE_MSG %2
-  call measure_start
+  call measure_end
   pop rsi
 %endmacro
 main:
@@ -78,7 +78,7 @@ _start:
   jae .ok
     call yikes ; config too short
   .ok:
-  call test_configuration ; MARK: TODO: I left off here: Configuration only works with up to 2 lines! MSTART & MEND untested (nested macros). Is endianness handled correctly in configuration?
+  call test_configuration
 
   MSTART 0
   MEND 0, "Test measurement (empty)"
