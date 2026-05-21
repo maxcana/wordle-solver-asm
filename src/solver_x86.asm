@@ -50,11 +50,101 @@ section .text
 %endmacro
 %macro MEND 2
   push rsi
+  push rdi
   mov rsi, %1
   MEASURE_MSG %2
   call measure_end
+  pop rdi
   pop rsi
 %endmacro
+
+; MARK: Benchmarks
+
+; modifies: a bunch
+benchmark:
+  push rbp
+  lea r14, [rel words_encoded]
+  lea r15, [rel possible_secrets]
+
+  MSTART 0
+  mov r12, 0
+  .for_PG1:
+    mov rdi, [r12*8 + r14] ; pg (last 5 bytes, ignore first 3)
+    mov r13, 0 ; counter (goes from 0 -> 14854)
+      .for_PS1:
+        mov rsi, [r15 + r13*8] ; ps
+
+        call get_colors
+
+        inc r13
+      cmp r13, 14855
+      jne .for_PS1
+    cmp r12, 14855
+    jne .for_PG1
+  MEND 0, "Colors"
+
+  MSTART 0
+  mov r12, 0
+  .for_PG2:
+    mov rdi, [r12*8 + r14] ; pg (last 5 bytes, ignore first 3)
+    mov r13, 0 ; counter (goes from 0 -> 14854)
+      .for_PS2:
+        mov rsi, [r15 + r13*8] ; ps
+
+        call get_colors
+        call make_bitmask
+        
+        inc r13
+      cmp r13, 14855
+      jne .for_PS2
+    cmp r12, 14855
+    jne .for_PG2
+  MEND 0, "Colors + Bitmasks"
+
+  MSTART 0
+  mov r12, 0
+  .for_PG3:
+    mov rdi, [r12*8 + r14] ; pg (last 5 bytes, ignore first 3)
+    mov rbp, 0 ; counter (goes from 0 -> 14854)
+      .for_PS3:
+        mov rsi, [r15 + rbp*8] ; ps
+
+        call get_colors
+        call make_bitmask
+        mov r10, [rel len_possible_secrets] ; counter
+        lea rbx, [rel cached_bitmaps] ; base
+
+        .for_another_PS3:
+          dec r10
+          lea r13, [rel possible_secrets]
+          mov r13, [r13 + r10*8] ; r13 is another_ps
+          shr r13, 40 ; r13 is index of another ps
+          imul r13, r13, 48 ; r13 *= 48
+
+          ptest xmm0, [rbx + r13]
+          jne .word_eliminated
+          ptest xmm1, [rbx + r13 + 16]
+          jne .word_eliminated
+          ptest xmm2, [rbx + r13 + 32]
+          je .word_not_eliminated
+
+          .word_eliminated:
+          
+          .word_not_eliminated:
+
+          test r10,r10
+          jne .for_another_PS3
+        
+        inc rbp
+      cmp rbp, 14855
+      jne .for_PS3
+    cmp r12, 14855
+    jne .for_PG3
+  MEND 0, "Colors + Bitmasks + Elimination"
+  pop rbp
+  ret
+
+; MARK: Main
 main:
 _start:
   ; Set up arguments for print function
@@ -80,11 +170,13 @@ _start:
   .ok:
   call test_configuration
 
+  call benchmark
+
   MSTART 0
   MEND 0, "Test measurement (empty)"
   
   MSTART 0
-  ; MARK: encode words
+  ; MARK: Encode words
   ; words_encoded shall be an array with each element = 8 bytes, storing one word
   ; ex: 00 00 00 00 00 07 04 03, 00 00 00 00 00 0B 08 08, ...
   xor r12d,r12d
@@ -185,10 +277,11 @@ _start:
   MEND 0, "Bitmap cache"
 
   mov qword [rel len_possible_secrets], 14855
-  main_loop:
+
   cmp qword [configuration], 0
   jne solver
-  ; MARK: Filtering
+  main_loop:
+  ; MARK: Input processing
   mov rsi, prompt
   mov rdi, prompt_len
   call print
@@ -255,6 +348,7 @@ _start:
 
   call index_rdi
 
+  ; input finished processing
   ; rdi = guess in standard form (WITH index)
   ; r8 = colors in standard form
 
@@ -370,7 +464,7 @@ _start:
       mov rsi, [rbx + rsi*8] ; ps
 
       call get_colors ; r8 - colors in the form 00 00 00 01 02 00 02 01
-
+      
       call make_bitmask
     
       mov r9, [rel len_possible_secrets] ; counter
@@ -1130,6 +1224,8 @@ index_rdi:
   .done:
   ret
 
+
+; MARK: Data
 jmp_table:
   dq gray
   dq yellow

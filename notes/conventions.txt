@@ -1,0 +1,10 @@
+calling convention for most helper functions is 
+- RSI (usually address)
+- RDI (usually length)
+- usually preserves (pushes and pops) all regs
+
+main file:
+- counters go in r8-r15 (usually r9-r12) or on stack
+- save rcx for bit-shifting
+- rsi = secret, rdi = guess
+- minimize accessing memory as much as possible

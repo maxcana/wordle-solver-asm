@@ -171,8 +171,9 @@ measure_end:
   mov rdi, measure_2_len
   call print
 
-  mov rdi, rax
-  call write_fnumber
+  mov rsi, rax
+  mov rdi, 1000000
+  call write_fdouble
   call print
 
   mov rsi, measure_3
@@ -958,5 +959,5 @@ section .data
   measure_1_len equ $ - measure_1
   measure_2 db `\" completed in `
   measure_2_len equ $ - measure_2
-  measure_3 db " cycles", 0xA
+  measure_3 db " megacycles", 0xA
   measure_3_len equ $ - measure_3
