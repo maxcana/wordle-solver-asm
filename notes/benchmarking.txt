@@ -1,0 +1,23 @@
+for a dictionary of 5000 words (more words makes the cubic part - "Elimination" - even worse):
+
+Measurement "Colors" completed in 882.556 megacycles
+Measurement "Colors + Bitmasks" completed in 7530.694 megacycles
+Measurement "Colors + Bitmasks + Elimination" completed in 275712.122 megacycles
+Measurement "Test measurement (empty)" completed in 0.0 megacycles
+Measurement "Encode words" completed in 0.444 megacycles
+Measurement "Bitmap cache" completed in 2.662 megacycles
+
+i tested again to see the deviation:
+
+Measurement "Colors" completed in 914.433 megacycles
+Measurement "Colors + Bitmasks" completed in 9033.821 megacycles
+Measurement "Colors + Bitmasks + Elimination" completed in 271218.435 megacycles
+Measurement "Test measurement (empty)" completed in 0.0 megacycles
+Measurement "Encode words" completed in 0.509 megacycles
+Measurement "Bitmap cache" completed in 2.604 megacycles
+
+so sure the Colors + Bitmasks are not super efficient, but they are quadratic.
+the cubic part is the actual performance killer.
+for 5000 words the Colors + Bitmasks account for ~3% of the CPU cycles taken, and for 14855 words it will be even less.
+
+i think this is good news since it's just one part that needs to be further heavily optimized, the ptests.

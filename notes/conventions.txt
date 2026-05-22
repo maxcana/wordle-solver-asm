@@ -1,7 +1,11 @@
+.asm files are included in the buildscript as objs, auto linked
+.s files are not included in the buildscript. so, you can manually inject their contents into a .asm file using %include "src\thing.s"
+
 calling convention for most helper functions is 
-- RSI (usually address)
-- RDI (usually length)
+- rsi (usually address)
+- rdi (usually length)
 - usually preserves (pushes and pops) all regs
+- usually outputs to rsi, rdi as well (especially if its address and length to allow call chaining)
 
 main file:
 - counters go in r8-r15 (usually r9-r12) or on stack

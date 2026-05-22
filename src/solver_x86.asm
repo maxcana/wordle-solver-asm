@@ -58,91 +58,7 @@ section .text
   pop rsi
 %endmacro
 
-; MARK: Benchmarks
-
-; modifies: a bunch
-benchmark:
-  push rbp
-  lea r14, [rel words_encoded]
-  lea r15, [rel possible_secrets]
-
-  MSTART 0
-  mov r12, 0
-  .for_PG1:
-    mov rdi, [r12*8 + r14] ; pg (last 5 bytes, ignore first 3)
-    mov r13, 0 ; counter (goes from 0 -> 14854)
-      .for_PS1:
-        mov rsi, [r15 + r13*8] ; ps
-
-        call get_colors
-
-        inc r13
-      cmp r13, 14855
-      jne .for_PS1
-    cmp r12, 14855
-    jne .for_PG1
-  MEND 0, "Colors"
-
-  MSTART 0
-  mov r12, 0
-  .for_PG2:
-    mov rdi, [r12*8 + r14] ; pg (last 5 bytes, ignore first 3)
-    mov r13, 0 ; counter (goes from 0 -> 14854)
-      .for_PS2:
-        mov rsi, [r15 + r13*8] ; ps
-
-        call get_colors
-        call make_bitmask
-        
-        inc r13
-      cmp r13, 14855
-      jne .for_PS2
-    cmp r12, 14855
-    jne .for_PG2
-  MEND 0, "Colors + Bitmasks"
-
-  MSTART 0
-  mov r12, 0
-  .for_PG3:
-    mov rdi, [r12*8 + r14] ; pg (last 5 bytes, ignore first 3)
-    mov rbp, 0 ; counter (goes from 0 -> 14854)
-      .for_PS3:
-        mov rsi, [r15 + rbp*8] ; ps
-
-        call get_colors
-        call make_bitmask
-        mov r10, [rel len_possible_secrets] ; counter
-        lea rbx, [rel cached_bitmaps] ; base
-
-        .for_another_PS3:
-          dec r10
-          lea r13, [rel possible_secrets]
-          mov r13, [r13 + r10*8] ; r13 is another_ps
-          shr r13, 40 ; r13 is index of another ps
-          imul r13, r13, 48 ; r13 *= 48
-
-          ptest xmm0, [rbx + r13]
-          jne .word_eliminated
-          ptest xmm1, [rbx + r13 + 16]
-          jne .word_eliminated
-          ptest xmm2, [rbx + r13 + 32]
-          je .word_not_eliminated
-
-          .word_eliminated:
-          
-          .word_not_eliminated:
-
-          test r10,r10
-          jne .for_another_PS3
-        
-        inc rbp
-      cmp rbp, 14855
-      jne .for_PS3
-    cmp r12, 14855
-    jne .for_PG3
-  MEND 0, "Colors + Bitmasks + Elimination"
-  pop rbp
-  ret
+%include "src\solver_x86.benchmark.s"
 
 ; MARK: Main
 main:
@@ -665,7 +581,7 @@ _start:
 ; rdi - guess in the form 00 00 00 00 00 07 04 03
 ; r8 - colors in the form 00 00 00 02 00 00 00 00
 ; Return: xmm0-2 - bitmask
-; modifies: rax, rbx, rcx, rdx, r8, r9, r10, r11
+; modifies: rax, rbx, rcx, rdx, r8, r9, r10, r11, r12, r14, xmm0-3
 ; preserves: rdi
 make_bitmask:
   ; encode 'positions' section of bitmask
@@ -692,8 +608,8 @@ make_bitmask:
     ; al = pg[r9]
 
     movzx rbx, r8b; rbx = color (zero-extended). (0,1,2)
-    lea r15, [rel jmp_table] ; temp
-    jmp qword [r15 + rbx*8]
+    lea r10, [rel jmp_table] ; temp
+    jmp qword [r10 + rbx*8]
 
     gray:
       mov ebx,0b01
