@@ -385,7 +385,12 @@ _start:
     
       mov r9, [rel len_possible_secrets] ; counter
       lea rbx, [rel cached_bitmaps] ; base
+      
+      ; combine xmm0 and xmm1 into ymm0
+      ; vinserti128 ymm0, ymm0, xmm0, 0 ; xmm0 in low bits (lower address goes to low part of ymm register)
+      vinserti128 ymm0, ymm0, xmm1, 1 ; xmm1 in high bits
 
+      ; this section runs 3,278,068,076,375 times. it should be really fast.
       for_another_PS:
         dec r9
         lea r14, [rel possible_secrets]
@@ -394,10 +399,7 @@ _start:
         imul r14, r14, 48 ; r14 *= 48
 
         ; take bitmaps from memory [ the heap is SLOWWWWWWWW :( ]
-        ptest xmm0, [rbx + r14] ; ptest only works on 16-byte aligned aligned xmmwords
-        jne .word_eliminated
-
-        ptest xmm1, [rbx + r14 + 16]
+        vptest ymm0, [rbx + r14]
         jne .word_eliminated
 
         ptest xmm2, [rbx + r14 + 32]

@@ -21,3 +21,48 @@ the cubic part is the actual performance killer.
 for 5000 words the Colors + Bitmasks account for ~3% of the CPU cycles taken, and for 14855 words it will be even less.
 
 i think this is good news since it's just one part that needs to be further heavily optimized, the ptests.
+
+***
+
+i added avx256 by using ymm holding both xmm0 and xmm1, now:
+Measurement "Colors" completed in 1169.725 megacycles
+Measurement "Colors + Bitmasks" completed in 9044.546 megacycles
+Measurement "Colors + Bitmasks + Elimination" completed in 273222.349 megacycles
+Measurement "Colors + Bitmasks + Elimination (with ymm)" completed in 216061.690 megacycles
+
+we shaved off 60B cycles, which is great, and will be even better for 14855 words.
+
+***
+
+there's a lot of math and instructions we are running, to find the correct bitmap.
+theoretically, i dont care what word is being eliminated, just the count.
+so i could just iterate through the bitmaps directly as an array, removing some shr, imul, memory register offsets
+
+with these optimizations, now:
+Measurement "Colors" completed in 903.456 megacycles
+Measurement "Colors + Bitmasks" completed in 7577.704 megacycles
+Measurement "Colors + Bitmasks + Elimination" completed in 302250.112 megacycles
+Measurement "Colors + Bitmasks + Elimination (w/ ymm + optimizations)" completed in 817439.155 megacycles
+
+huh, we added 500B cycles. uh... ok. i see why.
+i did all 14855 words for the innermost loop only, since i forgot to include BENCHMARK_WORDS in my logic.
+lets try correctly:
+
+huh, it took longer, which really makes no sense:
+Measurement "Colors" completed in 1030.560 megacycles
+Measurement "Colors + Bitmasks" completed in 8140.73 megacycles
+Measurement "Colors + Bitmasks + Elimination" completed in 279393.540 megacycles
+Measurement "Colors + Bitmasks + (Elimination w/ ymm + optimizations)" completed in 265478.168 megacycles
+
+tested again:
+Measurement "Colors + Bitmasks + Elimination (w/ ymm + optimizations)" completed in 284447.409 megacycles
+
+yea, this is not a good optimization?
+it seems impossible, as its much less code, so it must be faster.
+
+***
+
+with 1000 BENCHMARK_WORDS, i can test faster, and i get results like:
+Measurement "Colors + Bitmasks + Elimination" completed in 2574.593 megacycles
+Measurement "Colors + Bitmasks + Elimination (w/ ymm)" completed in 2395.573 megacycles
+Measurement "Colors + Bitmasks + Elimination (w/ ymm + optimizations)" completed in 2115.929 megacycles
