@@ -86,11 +86,26 @@ _start:
   .ok:
   call test_configuration
 
-  call benchmark
+  ; call benchmark
 
   MSTART 0
   MEND 0, "Test measurement (empty)"
   
+  MSTART 0
+  mov r9, 0
+  .test_printing:
+  dec rsp
+  mov byte [rsp], "."
+  mov rsi, rsp
+  mov rdi, 1
+  call print
+  inc rsp
+
+  inc r9
+  cmp r9, 1000
+  jne .test_printing
+  MEND 0, "Print 1000 times"
+
   MSTART 0
   ; MARK: Encode words
   ; words_encoded shall be an array with each element = 8 bytes, storing one word
@@ -417,6 +432,16 @@ _start:
       cmp qword [rel for_ps_counter], 14855
       jne for_PS
 
+    ; PRINTING IS DOWN FOR MAINTENANCE
+      dec rsp
+      mov byte [rsp], "."
+      mov rsi, rsp
+      mov rdi, 1
+      call print
+      inc rsp
+      jmp .dont_print
+
+    ; (unused atm) printing code
     mov r15, [rsp]
     and r15, 0x00_00_00_00_00_00_00_0F
     cmp r15b, 0xF

@@ -955,7 +955,7 @@ section .data
 
   config_filename db "C:\\user\\dev\\assembly\\wordle-solver-asm\\config.arqw", 0
 
-  measure_1 db `Measurement \"`
+  measure_1 db `\"`
   measure_1_len equ $ - measure_1
   measure_2 db `\" completed in `
   measure_2_len equ $ - measure_2

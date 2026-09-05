@@ -1,4 +1,4 @@
-# AAAAAAAAAAAAAAa
+# wordle-solver-asm
 
 help
 
